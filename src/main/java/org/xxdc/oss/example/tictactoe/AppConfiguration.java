@@ -9,7 +9,6 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.xxdc.oss.example.BotPlayer;
 import org.xxdc.oss.example.Game;
-import org.xxdc.oss.example.HumanPlayer;
 import org.xxdc.oss.example.PlayerNode;
 import org.xxdc.oss.example.bot.BotStrategy;
 import org.xxdc.oss.example.commentary.CommentaryPersona;
@@ -37,7 +36,7 @@ public class AppConfiguration {
     return new Game(
         3,
         false,
-        new PlayerNode.Local<>("X", new HumanPlayer()),
+        new PlayerNode.Local<>("X", new BotPlayer(BotStrategy.RANDOM)),
         new PlayerNode.Local<>("O", new BotPlayer(BotStrategy.ALPHABETA)));
   }
 
