@@ -16,8 +16,8 @@ import org.xxdc.oss.example.bot.BotStrategy;
 
 /**
  * Plays one bot-versus-bot game with Alpha commentating, then writes a per-move record to
- * {@code build/episode-2-<mode>-window-<N>.csv}: prompt tokens, citations, whether they held up,
- * and whether Beta quoted its colour line exactly.
+ * {@code build/episode-2-<mode>-window-<N>.csv}: prompt tokens, a count of Alpha's claims by
+ * verdict with the reasons for any that failed, and whether Beta quoted its colour line exactly.
  */
 @Configuration
 public class AppConfiguration {
@@ -56,22 +56,22 @@ public class AppConfiguration {
       throws IOException {
     var lines = new ArrayList<String>();
     lines.add(
-        "move,from_model,prompt_tokens,mentioned,invalid,out_of_sight,uncited,player_checks,"
-            + "player_correct,answer,beta_answer,beta_quote_verified");
+        "move,from_model,prompt_tokens,claims,supported,contradicted,unsupported,unchecked,"
+            + "problems,answer,beta_answer,beta_quote_verified");
     for (var r : rows) {
-      var c = r.check();
+      var t = FactChecker.Tally.of(r.verdicts());
       lines.add(
           String.join(
               ",",
               String.valueOf(r.move()),
               String.valueOf(r.fromModel()),
               r.promptTokens() == null ? "" : r.promptTokens().toString(),
-              quote(c.mentioned().toString()),
-              quote(c.invalid().toString()),
-              quote(c.outOfSight().toString()),
-              quote(c.uncited().toString()),
-              String.valueOf(c.playerChecks()),
-              String.valueOf(c.playerCorrect()),
+              String.valueOf(t.claims()),
+              String.valueOf(t.supported()),
+              String.valueOf(t.contradicted()),
+              String.valueOf(t.unsupported()),
+              String.valueOf(t.unchecked()),
+              quote(String.join(" | ", t.problems())),
               quote(r.commentary().answer()),
               quote(r.colour().map(b -> b.commentary().answer()).orElse("")),
               r.colour().map(b -> String.valueOf(b.quoteVerified())).orElse("")));

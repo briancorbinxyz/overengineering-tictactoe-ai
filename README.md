@@ -7,7 +7,7 @@ describes and compare one episode with the next.
 | Episode | Branch | What it adds | Stack |
 |---|---|---|---|
 | [1](https://briancorbinxyz.medium.com/rags-to-riches-with-spring-ai-episode-1-44d4f604b565) | [`episode-1`](../../tree/episode-1) | A commentator persona for over-engineered tic-tac-toe | Spring AI 1.0.2, Spring Boot 3.5.6 |
-| 2 | [`episode-2`](../../tree/episode-2) | Alpha calls every move and Beta adds colour on quiet moves: a memory per commentator per game, structured output, and model-free checks of Alpha's back-references and Beta's quotations | Spring AI 2.0.1, Spring Boot 4.1.1, Java 25 |
+| 2 | [`episode-2`](../../tree/episode-2) | Alpha calls every move and Beta adds colour on quiet moves: a memory per commentator per game, structured output, and model-free fact checks of Alpha's claims and Beta's quotations | Spring AI 2.0.1, Spring Boot 4.1.1, Java 25 |
 | 3 | `episode-3` (in progress) | Alpha and Beta move from tic-tac-toe to an archive of more than a million words: a deliberately naive RAG baseline, every answer traced back to its source, and a golden question set to measure later episodes against | Spring AI 2.0.1 |
 
 Compare any two episodes on GitHub with
@@ -35,8 +35,9 @@ ollama serve   # if it is not already running
 ```
 
 Each run writes `build/episode-2-<mode>-window-<N>.csv`: one row per move plus the
-post-game summary, with prompt tokens, the citation check, and Beta's line with
-whether it quoted its colour exactly.
+post-game summary, with prompt tokens, Alpha's claims counted by verdict (supported,
+contradicted, unsupported, unchecked) with the reason for each failure, and Beta's
+line with whether it quoted its colour exactly.
 
 `./gradlew test` needs no model: the context test skips the game, and the other
 tests do not start Spring.
@@ -51,6 +52,9 @@ tests do not start Spring.
 | `MoveReport` | The facts about one move, written as the user message |
 | `AlphaCommentaryPersona` | Episode 1's decorator, plus a per-game `Broadcast` with memory |
 | `BetaColourCommentator` | Beta: colour on quiet moves, with its quotation checked against the file |
-| `CitationCheck` | Checks back-references against the game's history |
+| `Claim`, `Commentary` | What a commentator says: an unchecked aside, and claims each with its own sources |
+| `FactChecker` | Checks claims against evidence and returns a verdict for each |
+| `GameFactChecker` | Checks Alpha's claims against the game's history: moves, players, and claimed wins |
+| `QuoteChecker` | Checks Beta's quotation against the colour file, word for word |
 | `AlphaConfiguration` | Both `ChatClient`s, memory window, temperatures, solo or duo |
 | `AppConfiguration` | Plays one game and writes the CSV |

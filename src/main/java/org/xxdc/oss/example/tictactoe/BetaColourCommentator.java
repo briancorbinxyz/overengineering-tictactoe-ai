@@ -12,7 +12,7 @@ import org.springframework.ai.chat.model.ChatResponse;
  * Beta, the colour commentator. Alpha calls the move; on quiet moves Beta adds context.
  *
  * <p>In this episode the context is one hand-written line, picked by the program. Beta must quote
- * it word for word, and the quote is checked against the file by plain string comparison: the
+ * it word for word in a claim's sources, and {@link QuoteChecker} compares it with the file: the
  * series' first verified quotation. From Episode 3, Beta has to find its material.
  */
 public final class BetaColourCommentator {
@@ -20,11 +20,11 @@ public final class BetaColourCommentator {
   private static final Logger log = LoggerFactory.getLogger(BetaColourCommentator.class);
 
   private final ChatClient chatClient;
-  private final ColourLines colour;
+  private final QuoteChecker quotes;
 
   public BetaColourCommentator(ChatClient chatClient, ColourLines colour) {
     this.chatClient = chatClient;
-    this.colour = colour;
+    this.quotes = new QuoteChecker(colour);
   }
 
   /**
@@ -32,7 +32,8 @@ public final class BetaColourCommentator {
    *
    * @param commentary Beta's reply, or a plain fallback
    * @param offered the line Beta was given
-   * @param quoteVerified true when Beta cited the offered line exactly, and nothing else
+   * @param quoteVerified true when a claim quotes the offered line exactly, and none quotes
+   *     anything else
    * @param fromModel false when the model could not be reached
    */
   public record Colour(
@@ -53,7 +54,7 @@ public final class BetaColourCommentator {
             .formatted(report.toPrompt(), alphaLine.answer(), line);
     Optional<Commentary> reply = ask(conversationId, prompt);
     var commentary = reply.orElseGet(() -> Commentary.factual(line));
-    boolean verified = reply.isPresent() && colour.quotesExactly(commentary.citations(), line);
+    boolean verified = reply.isPresent() && quotes.quotesExactly(commentary, line);
     log.info("  Beta: {}", commentary.answer());
     if (commentary.hasAside()) {
       log.info("    ({})", commentary.aside());

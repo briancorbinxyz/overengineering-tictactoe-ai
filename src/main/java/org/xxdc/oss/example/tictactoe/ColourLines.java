@@ -43,16 +43,9 @@ public final class ColourLines {
         : Optional.empty();
   }
 
-  /**
-   * True when the citations are exactly the offered line, which is in this file. Surrounding
-   * whitespace and one pair of surrounding quotation marks are ignored; nothing else is. A
-   * paraphrase, a fact from elsewhere, or a line that is not in the file all fail.
-   */
-  public boolean quotesExactly(List<String> citations, String offered) {
-    if (citations.isEmpty() || !lines.contains(offered)) {
-      return false;
-    }
-    return citations.stream().map(ColourLines::unquote).allMatch(offered::equals);
+  /** True when the line is in the file, exactly. */
+  public boolean contains(String line) {
+    return lines.contains(line);
   }
 
   static String unquote(String s) {

@@ -31,6 +31,7 @@ public final class AlphaCommentaryPersona implements CommentaryPersona {
   private final ColourLines colour;
   private final int memoryWindow;
   private final Optional<BetaColourCommentator> beta;
+  private final GameFactChecker checker = new GameFactChecker();
 
   /**
    * @param beta the colour commentator, or empty for a single-commentator broadcast, in which case
@@ -50,7 +51,7 @@ public final class AlphaCommentaryPersona implements CommentaryPersona {
   }
 
   /**
-   * One move's commentary, with what it cost and whether its back-references hold up. {@code
+   * One move's commentary, with what it cost and a verdict on each of Alpha's claims. {@code
    * colour} is Beta's contribution on a quiet move, when there is one.
    */
   public record MoveCommentary(
@@ -58,7 +59,7 @@ public final class AlphaCommentaryPersona implements CommentaryPersona {
       String prompt,
       Commentary commentary,
       Integer promptTokens,
-      CitationCheck.Result check,
+      List<FactChecker.Verdict> verdicts,
       boolean fromModel,
       Optional<BetaColourCommentator.Colour> colour) {}
 
@@ -119,12 +120,14 @@ public final class AlphaCommentaryPersona implements CommentaryPersona {
       Optional<String> line = bare.quiet() ? colour.forQuietMove(quietMoves++) : Optional.empty();
       var report = beta.isPresent() ? bare : MoveReport.of(before, after, n, line);
       var prompt = report.toPrompt();
-      var players = after.playerMarkers();
       var reply = ask(conversationId, prompt);
       var commentary =
           reply.map(ResponseEntity::entity).orElseGet(() -> Commentary.factual(report.plainLine()));
-      var check = CitationCheck.check(commentary, n, earliestVisible(n), players);
+      var verdicts =
+          checker.checkAll(
+              commentary, new GameFactChecker.Evidence(history, n, earliestVisible(n)));
       log.info("Move {}: {}", n, commentary.answer());
+      logProblems(verdicts);
       if (commentary.hasAside()) {
         log.info("  ({})", commentary.aside());
       }
@@ -133,7 +136,7 @@ public final class AlphaCommentaryPersona implements CommentaryPersona {
           beta.flatMap(b -> line.map(l -> b.onQuietMove(betaConversationId, report, commentary, l)));
       moves.add(
           new MoveCommentary(
-              n, prompt, commentary, promptTokens(reply), check, answered(reply), said));
+              n, prompt, commentary, promptTokens(reply), verdicts, answered(reply), said));
     }
 
     /** The post-game summary, from memory. Turning points are not re-sent. */
@@ -141,26 +144,28 @@ public final class AlphaCommentaryPersona implements CommentaryPersona {
       List<GameState> history = List.copyOf(game.history());
       int last = game.moveNumber();
       var prompt =
-          "The game is over. Give the post-game summary in \"answer\": name each turning point"
-              + " you can see in this conversation by its move number, and cite each one.";
+          "The game is over. Give the post-game summary as claims: one claim per turning point"
+              + " you can see in this conversation, naming its move number, with that move in the"
+              + " claim's sources.";
       var reply = ask(conversationId, prompt);
       var commentary =
           reply
               .map(ResponseEntity::entity)
               .orElseGet(() -> Commentary.factual("No summary: the model could not be reached."));
-      var check =
-          CitationCheck.check(
-              commentary, last, earliestVisible(last + 1), history.getLast().playerMarkers());
+      var verdicts =
+          checker.checkAll(
+              commentary, new GameFactChecker.Evidence(history, last, earliestVisible(last + 1)));
       var mc =
           new MoveCommentary(
               last + 1,
               prompt,
               commentary,
               promptTokens(reply),
-              check,
+              verdicts,
               answered(reply),
               Optional.empty());
       log.info("Post-game: {}", commentary.answer());
+      logProblems(verdicts);
       return mc;
     }
 
@@ -170,6 +175,15 @@ public final class AlphaCommentaryPersona implements CommentaryPersona {
 
     public String conversationId() {
       return conversationId;
+    }
+  }
+
+  private static void logProblems(List<FactChecker.Verdict> verdicts) {
+    for (var v : verdicts) {
+      if (v.status() == FactChecker.Status.CONTRADICTED
+          || v.status() == FactChecker.Status.UNSUPPORTED) {
+        log.warn("  {}: {} ({})", v.status(), v.claim().text(), v.reason());
+      }
     }
   }
 
