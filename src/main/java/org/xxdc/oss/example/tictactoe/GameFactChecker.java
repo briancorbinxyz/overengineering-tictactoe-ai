@@ -18,11 +18,15 @@ import org.xxdc.oss.example.GameState;
  *       reports. A move older than that is a memory Alpha cannot have.
  *   <li>Is every earlier move it mentions also in its sources?
  *   <li>When it names one move and one player, is that the player who made the move?
- *   <li>When it says a player has won, does the board agree?
+ *   <li>When it says a player has won, does the board agree, and if it names the line, is it
+ *       that line?
+ *   <li>When it puts a player on a square ("X holds the centre"), does the player have a mark
+ *       there?
  * </ol>
  *
  * <p>It checks what can be checked cheaply and exactly, and says so when it cannot. A claim that
- * X "took the corner" on a move where X took the centre passes, because squares are not checked.
+ * X "took the corner" on a move where X took the centre still passes when X holds a corner from
+ * earlier: the square check asks whether the player has a mark there, not when it was made.
  * The win check is lexical: it looks for words like "wins" and skips sentences about blocking,
  * threats or what might happen, so an unusual phrasing can slip past it.
  */
@@ -53,7 +57,7 @@ public final class GameFactChecker implements FactChecker<GameFactChecker.Eviden
               + "|try|tries|tried|trying|attempt|attempts|attempting|aim|aims|aiming"
               + "|seek|seeks|seeking|hope|hopes|hoping|set up|sets up|setting up|towards?"
               // a win denied
-              + "|not|never|fail|fails|failed|unable|cannot|can't|won't|isn't|wasn't"
+              + "|not|never|no|without|fail|fails|failed|unable|cannot|can't|won't|isn't|wasn't"
               + "|no one|nobody|neither)\\b");
 
   /**
@@ -62,11 +66,18 @@ public final class GameFactChecker implements FactChecker<GameFactChecker.Eviden
    * @param history the game's states; index m is the board after move m, index 0 the empty board
    * @param currentMove the move being commented on, or the last move after the game
    * @param earliestVisibleMove the oldest move report still in Alpha's memory window
+   * @param summary true for the post-game summary, where there is no current move
    */
-  public record Evidence(List<GameState> history, int currentMove, int earliestVisibleMove) {
+  public record Evidence(
+      List<GameState> history, int currentMove, int earliestVisibleMove, boolean summary) {
 
     public Evidence {
       history = List.copyOf(history);
+    }
+
+    /** Evidence for commentary on a move during the game. */
+    public Evidence(List<GameState> history, int currentMove, int earliestVisibleMove) {
+      this(history, currentMove, earliestVisibleMove, false);
     }
 
     List<String> players() {
@@ -109,9 +120,12 @@ public final class GameFactChecker implements FactChecker<GameFactChecker.Eviden
     }
 
     List<String> named = evidence.players().stream().filter(p -> names(claim.text(), p)).toList();
-    // The move a claim is about: the one in its text, or, when the text names none, the one in
-    // its sources. "O blocked an immediate loss" with sources ["move 4"] is about move 4.
-    Set<Integer> about = mentioned.isEmpty() ? cited : mentioned;
+    // The move a claim is about is the one in its text. During the game, sources are not a
+    // guide: models cite what a move responds to, so a claim about move 8 sourced to move 7 is
+    // still about move 8. Only in the post-game summary, where there is no current move, does a
+    // claim with no move in its text take the move from its sources: "O blocked an immediate
+    // loss" with sources ["move 4"] is about move 4.
+    Set<Integer> about = mentioned.isEmpty() && evidence.summary() ? cited : mentioned;
     if (about.size() == 1 && named.size() == 1) {
       int m = about.iterator().next();
       if (m >= 1 && m <= evidence.currentMove()) {
@@ -124,16 +138,39 @@ public final class GameFactChecker implements FactChecker<GameFactChecker.Eviden
       }
     }
 
-    if (isWinClaim(claim.text()) && named.size() == 1) {
-      int m = about.size() == 1 ? about.iterator().next() : evidence.currentMove();
-      if (about.size() <= 1 && m >= 1 && m <= evidence.currentMove()) {
-        checksRun++;
-        GameState state = evidence.history().get(m);
-        String player = named.getFirst();
-        boolean won = state.lastPlayerHasChain() && state.lastPlayer().equals(player);
-        if (!won) {
-          contradicted.add("says %s has won, but after move %d nobody has".formatted(player, m));
+    // The move whose board the claim describes: the one it names, or the current one.
+    int boardMove = about.size() == 1 ? about.iterator().next() : evidence.currentMove();
+    boolean oneBoard = about.size() <= 1 && boardMove >= 1 && boardMove <= evidence.currentMove();
+    var lines = BoardVocabulary.lines(claim.text());
+
+    if (isWinClaim(claim.text()) && named.size() == 1 && oneBoard) {
+      checksRun++;
+      GameState state = evidence.history().get(boardMove);
+      String player = named.getFirst();
+      boolean won = state.lastPlayerHasChain() && state.lastPlayer().equals(player);
+      if (!won) {
+        contradicted.add(
+            "says %s has won, but after move %d nobody has".formatted(player, boardMove));
+      } else if (lines.size() == 1) {
+        // A real win, but is it the line the claim names?
+        var line = lines.getFirst();
+        if (line.readings().stream().noneMatch(sq -> holdsAll(state, sq, player))) {
+          contradicted.add("%s won, but not with %s".formatted(player, line.phrase()));
         }
+      }
+    }
+
+    var squares = BoardVocabulary.squares(claim.text());
+    if (squares.size() == 1 && lines.isEmpty() && named.size() == 1 && oneBoard) {
+      // Lenient on purpose: the claim holds if the player has a mark on any square the phrase
+      // can mean, after that move. "X holds the centre" passes whether X took it now or earlier.
+      checksRun++;
+      GameState state = evidence.history().get(boardMove);
+      var square = squares.getFirst();
+      String player = named.getFirst();
+      if (square.readings().getFirst().stream().noneMatch(i -> holds(state, i, player))) {
+        contradicted.add(
+            "after move %d, %s has no mark on %s".formatted(boardMove, player, square.phrase()));
       }
     }
 
@@ -162,6 +199,14 @@ public final class GameFactChecker implements FactChecker<GameFactChecker.Eviden
               "the aside makes a claim about the game, where nothing checks it"));
     }
     return List.copyOf(verdicts);
+  }
+
+  private static boolean holds(GameState state, int square, String player) {
+    return player.equals(state.board().content()[square]);
+  }
+
+  private static boolean holdsAll(GameState state, Set<Integer> squares, String player) {
+    return squares.stream().allMatch(i -> holds(state, i, player));
   }
 
   static boolean isWinClaim(String text) {

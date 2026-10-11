@@ -154,7 +154,7 @@ public final class AlphaCommentaryPersona implements CommentaryPersona {
               .orElseGet(() -> Commentary.factual("No summary: the model could not be reached."));
       var verdicts =
           checker.checkAll(
-              commentary, new GameFactChecker.Evidence(history, last, earliestVisible(last + 1)));
+              commentary, new GameFactChecker.Evidence(history, last, earliestVisible(last + 1), true));
       var mc =
           new MoveCommentary(
               last + 1,

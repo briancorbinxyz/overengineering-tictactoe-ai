@@ -139,13 +139,60 @@ class GameFactCheckerTest {
   }
 
   @Test
-  void aClaimWithTheMoveOnlyInItsSourcesIsStillCheckedForPlayer() {
+  void inThePostGameSummaryAClaimWithTheMoveOnlyInItsSourcesIsAboutThatMove() {
     // mistral's habit: the move number in sources, never in the text. Move 4 was O's.
-    var right = check("O blocked an immediate loss.", List.of("move 4"), 9);
+    var summary = new GameFactChecker.Evidence(DRAWN, 9, 1, true);
+    var right = checker.check(new Claim("O blocked an immediate loss.", List.of("move 4")), summary);
     assertEquals(Status.SUPPORTED, right.status(), right.reason());
-    var wrong = check("X blocked an immediate loss.", List.of("move 4"), 9);
+    var wrong = checker.check(new Claim("X blocked an immediate loss.", List.of("move 4")), summary);
     assertEquals(Status.CONTRADICTED, wrong.status());
     assertEquals("move 4 was O's, not X's", wrong.reason());
+  }
+
+  @Test
+  void duringTheGameASourceIsWhatTheMoveRespondsToNotWhatItIsAbout() {
+    // A claim about move 8 (O's), citing the X move it answers. Not a claim about move 7.
+    var v = check("O answers with a block of its own.", List.of("move 7"), 8);
+    assertEquals(Status.SUPPORTED, v.status(), v.reason());
+  }
+
+  @Test
+  void denyingAWinIsNotAWinClaim() {
+    assertFalse(GameFactChecker.isWinClaim("X fills the last square, completing the board without securing a win."));
+    assertFalse(GameFactChecker.isWinClaim("No win for O tonight."));
+  }
+
+  @Test
+  void aSquareThePlayerHoldsIsSupported() {
+    var v = check("X opened in the top-left corner on move 1.", List.of("move 1"), 4);
+    assertEquals(Status.SUPPORTED, v.status(), v.reason());
+  }
+
+  @Test
+  void aSquareThePlayerDoesNotHoldIsContradicted() {
+    var early = check("X took the centre on move 1.", List.of("move 1"), 4);
+    assertEquals(Status.CONTRADICTED, early.status());
+    assertEquals("after move 1, X has no mark on the centre", early.reason());
+    // qwen called row 1, column 2 "the centre". After move 3 the centre is O's.
+    var misnamed = check("X takes the centre.", List.of(), 3);
+    assertEquals(Status.CONTRADICTED, misnamed.status());
+  }
+
+  @Test
+  void aRealWinOnTheWrongLineIsContradicted() {
+    // X wins on the top-right to bottom-left diagonal at move 5.
+    var won = play(2, 0, 4, 1, 6);
+    var evidence = new GameFactChecker.Evidence(won, 5, 1);
+    var wrongLine =
+        checker.check(
+            new Claim("X wins along the top-left to bottom-right diagonal.", List.of()), evidence);
+    assertEquals(Status.CONTRADICTED, wrongLine.status());
+    assertEquals(
+        "X won, but not with the top-left to bottom-right diagonal", wrongLine.reason());
+    var rightLine = checker.check(new Claim("X wins on the anti-diagonal.", List.of()), evidence);
+    assertEquals(Status.SUPPORTED, rightLine.status(), rightLine.reason());
+    var anyDiagonal = checker.check(new Claim("X wins with a diagonal.", List.of()), evidence);
+    assertEquals(Status.SUPPORTED, anyDiagonal.status(), anyDiagonal.reason());
   }
 
   @Test

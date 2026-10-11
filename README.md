@@ -34,20 +34,25 @@ ollama serve   # if it is not already running
 ./gradlew bootRun --args='--commentary.mode=solo'
 # a game someone can win (AlphaBeta against MCTS nearly always draws)
 ./gradlew bootRun --args='--game.x-strategy=RANDOM'
+# replay a game move for move, to compare models on the same game
+# (every run logs its own moves in this form)
+./gradlew bootRun --args='--game.moves=4,0,8,2,1,7,6,3,5'
 ```
 
 Each run writes two files to `build/`, named `episode-2-<model>-<mode>-window-<N>`:
 
 - `.csv`: one row per move plus the post-game summary, with prompt tokens, Alpha's
   claims counted by verdict (supported, contradicted, unsupported, unchecked) with
-  the reason for each failure, how many claims only echo the move report, whether a
-  reply went over three claims, whether Beta quoted its colour line exactly, and
-  whether each aside repeats one already told in the game (the log prints a
-  distinct-aside count per commentator);
+  the reason for each failure, the share of claims that had anything checkable in
+  them, how many claims only echo the move report or repeat an earlier claim,
+  whether a reply went over three claims, whether each aside repeats one already
+  told, and for Beta whether it quoted its colour line exactly, stray sources and
+  echoes (the log prints distinct counts for asides and claims);
 - `.jsonl`: the same rows in full, with every prompt, claim and source.
 
-A clean verdict sheet is only worth something if the echo count is low: a claim
-that reads the report back is always true and says nothing.
+A clean verdict sheet is only worth something if the echo count is low and the
+checked share is high: a claim that reads the report back is always true and says
+nothing, and a claim with nothing checkable in it is never wrong.
 
 `./gradlew test` needs no model: the context test skips the game, and the other
 tests do not start Spring.
@@ -62,9 +67,11 @@ tests do not start Spring.
 | `MoveReport` | The facts about one move, written as the user message |
 | `AlphaCommentaryPersona` | Episode 1's decorator, plus a per-game `Broadcast` with memory |
 | `BetaColourCommentator` | Beta: colour on quiet moves, with its quotation checked against the file |
-| `Claim`, `Commentary` | What a commentator says: an unchecked aside, and claims each with its own sources |
+| `Claim`, `Commentary` | What Alpha says: an unchecked aside, and claims each with its own sources |
+| `ColourCommentary` | What Beta says: a sentence of colour, the quoted line, and an optional reaction |
 | `FactChecker` | Checks claims against evidence and returns a verdict for each |
-| `GameFactChecker` | Checks Alpha's claims against the game's history: moves, players, and claimed wins |
+| `GameFactChecker` | Checks Alpha's claims against the game's history: moves, players, squares, and claimed wins and lines |
+| `BoardVocabulary` | The words for squares and lines ("the centre", "the top row") and the squares they mean |
 | `QuoteChecker` | Checks Beta's quotation against the colour file, word for word |
 | `EchoCheck` | Counts claims that only read the move report back |
 | `AlphaConfiguration` | Both `ChatClient`s, memory window, temperatures, solo or duo |

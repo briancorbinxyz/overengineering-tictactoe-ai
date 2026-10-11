@@ -67,9 +67,9 @@ public record MoveReport(
     // notice what is missing, and invents significance or a result to fill the gap. A line that
     // says "none" gives it something to contradict instead.
     out.append("Turning point: ")
-        .append(turningPoint.map(tp -> player + " " + describe(tp)).orElse("none, a quiet move"))
+        .append(turningPoint.map(tp -> player + " " + describe(tp)).orElse("none"))
         .append(".\n");
-    out.append("Result: ").append(result.orElse("none, play continues")).append(".\n");
+    out.append("Result: ").append(result.orElse("none")).append(".\n");
     out.append("Board:\n").append(board);
     colour.ifPresent(c -> out.append("Colour you may use: ").append(c).append('\n'));
     return out.toString();

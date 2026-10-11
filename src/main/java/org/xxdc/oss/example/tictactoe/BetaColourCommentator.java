@@ -38,6 +38,7 @@ public final class BetaColourCommentator {
    *     Beta added
    * @param fromModel false when the model could not be reached
    * @param prompt what Beta was sent
+   * @param report the move report inside that prompt, for the echo check
    */
   public record Colour(
       Commentary commentary,
@@ -45,7 +46,8 @@ public final class BetaColourCommentator {
       boolean quoteVerified,
       int straySources,
       boolean fromModel,
-      String prompt) {}
+      String prompt,
+      String report) {}
 
   /**
    * Colour for one quiet move.
@@ -60,7 +62,7 @@ public final class BetaColourCommentator {
     var prompt =
         "Move report:\n%s\nAlpha just said: \"%s\"\nYour colour line: \"%s\"\n"
             .formatted(report.toPrompt(), alphaLine.answer(), line);
-    Optional<Commentary> reply = ask(conversationId, prompt);
+    Optional<Commentary> reply = ask(conversationId, prompt).map(ColourCommentary::asCommentary);
     var commentary = reply.orElseGet(() -> Commentary.factual(line));
     boolean verified = reply.isPresent() && quotes.quotesExactly(commentary, line);
     int stray = reply.isPresent() ? quotes.straySources(commentary, line) : 0;
@@ -68,19 +70,21 @@ public final class BetaColourCommentator {
     if (commentary.hasAside()) {
       log.info("    ({})", commentary.aside());
     }
-    return new Colour(commentary, line, verified, stray, reply.isPresent(), prompt);
+    return new Colour(
+        commentary, line, verified, stray, reply.isPresent(), prompt, report.toPrompt());
   }
 
-  private Optional<Commentary> ask(String conversationId, String prompt) {
+  private Optional<ColourCommentary> ask(String conversationId, String prompt) {
     try {
-      ResponseEntity<ChatResponse, Commentary> response =
+      ResponseEntity<ChatResponse, ColourCommentary> response =
           chatClient
               .prompt()
               .user(prompt)
               .advisors(a -> a.param(ChatMemory.CONVERSATION_ID, conversationId))
               .call()
               .responseEntity(
-                  Commentary.class, spec -> spec.useProviderStructuredOutput().validateSchema());
+                  ColourCommentary.class,
+                  spec -> spec.useProviderStructuredOutput().validateSchema());
       return Optional.ofNullable(response.entity());
     } catch (RuntimeException e) {
       log.warn("Beta is unavailable, the line goes out plain: {}", e.getMessage());

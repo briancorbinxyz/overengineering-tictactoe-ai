@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
@@ -51,6 +52,26 @@ public class AppConfiguration {
         new PlayerNode.Local<>("O", new BotPlayer(o)));
   }
 
+  /**
+   * A strategy that replays a fixed game: the n-th move of the game is {@code moves[n]}, whichever
+   * player makes it. Models commentate different games when MCTS chooses the moves, so two models
+   * can only be compared like for like on a replayed game. Every run logs its moves in this form.
+   */
+  static ToIntFunction<GameState> replay(int[] moves) {
+    return state -> {
+      int played = 0;
+      for (String cell : state.board().content()) {
+        if (cell != null && !cell.isEmpty()) {
+          played++;
+        }
+      }
+      if (played >= moves.length) {
+        throw new IllegalStateException("game.moves ran out after " + moves.length + " moves");
+      }
+      return moves[played];
+    };
+  }
+
   /** The named strategies are static fields on {@link BotStrategy}, not enum constants. */
   static ToIntFunction<GameState> strategy(String name) {
     return switch (name.strip().toUpperCase(Locale.ROOT)) {
@@ -73,9 +94,18 @@ public class AppConfiguration {
       @Value("${commentary.mode:duo}") String mode,
       @Value("${spring.ai.ollama.chat.model:mistral}") String model,
       @Value("${game.x-strategy:ALPHABETA}") String xStrategy,
-      @Value("${game.o-strategy:MCTS}") String oStrategy) {
-    var x = strategy(xStrategy);
-    var o = strategy(oStrategy);
+      @Value("${game.o-strategy:MCTS}") String oStrategy,
+      @Value("${game.moves:}") String fixedMoves) {
+    boolean replaying = !fixedMoves.isBlank();
+    int[] moves =
+        replaying
+            ? Arrays.stream(fixedMoves.split(","))
+                .map(String::strip)
+                .mapToInt(Integer::parseInt)
+                .toArray()
+            : new int[0];
+    var x = replaying ? replay(moves) : strategy(xStrategy);
+    var o = replaying ? replay(moves) : strategy(oStrategy);
     return _ -> {
       if (!play) {
         return;
@@ -84,6 +114,13 @@ public class AppConfiguration {
         var broadcast = alpha.broadcast(game);
         game.playWithAction(broadcast::onMove);
         var summary = broadcast.postGame(game);
+        // The moves in the form game.moves takes, so this game can be replayed on another model.
+        String played =
+            game.history().stream()
+                .skip(1)
+                .map(st -> String.valueOf(st.lastMove()))
+                .collect(Collectors.joining(","));
+        log.info("Replay this game with --game.moves={}", played);
 
         var rows = new ArrayList<>(broadcast.moves());
         rows.add(summary);
@@ -101,17 +138,23 @@ public class AppConfiguration {
       throws IOException {
     var lines = new ArrayList<String>();
     lines.add(
-        "move,from_model,prompt_tokens,claims,over_limit,echoes,supported,contradicted,"
-            + "unsupported,unchecked,problems,aside,answer,beta_answer,beta_quote_verified,"
-            + "beta_stray_sources,aside_repeat,beta_aside_repeat");
-    var alphaAsides = new Asides();
-    var betaAsides = new Asides();
+        "move,from_model,prompt_tokens,claims,over_limit,echoes,claim_repeats,checked_share,"
+            + "supported,contradicted,unsupported,unchecked,problems,aside,aside_repeat,answer,"
+            + "beta_answer,beta_quote_verified,beta_stray_sources,beta_echoes,beta_aside_repeat");
+    var alphaAsides = new Repeats();
+    var alphaClaims = new Repeats();
+    var betaAsides = new Repeats();
     for (var r : rows) {
       var t = FactChecker.Tally.of(r.verdicts());
-      boolean alphaRepeat = alphaAsides.repeats(r.commentary().aside());
-      String betaRepeat =
-          r.colour().map(b -> String.valueOf(betaAsides.repeats(b.commentary().aside()))).orElse("");
       int claims = r.commentary().claims().size();
+      int repeatedClaims = 0;
+      for (var c : r.commentary().claims()) {
+        repeatedClaims += alphaClaims.repeats(c.text()) ? 1 : 0;
+      }
+      // A clean sheet means little if most claims had nothing checkable in them.
+      String checkedShare =
+          claims == 0 ? "" : "%.2f".formatted((double) (claims - t.unchecked()) / claims);
+      boolean alphaRepeat = alphaAsides.repeats(r.commentary().aside());
       lines.add(
           String.join(
               ",",
@@ -121,38 +164,47 @@ public class AppConfiguration {
               String.valueOf(claims),
               String.valueOf(claims > Commentary.MAX_CLAIMS),
               String.valueOf(EchoCheck.count(r.commentary(), r.prompt())),
+              String.valueOf(repeatedClaims),
+              checkedShare,
               String.valueOf(t.supported()),
               String.valueOf(t.contradicted()),
               String.valueOf(t.unsupported()),
               String.valueOf(t.unchecked()),
               quote(String.join(" | ", t.problems())),
               quote(r.commentary().aside()),
+              String.valueOf(alphaRepeat),
               quote(r.commentary().answer()),
               quote(r.colour().map(b -> b.commentary().answer()).orElse("")),
               r.colour().map(b -> String.valueOf(b.quoteVerified())).orElse(""),
               r.colour().map(b -> String.valueOf(b.straySources())).orElse(""),
-              String.valueOf(alphaRepeat),
-              betaRepeat));
+              r.colour().map(b -> String.valueOf(EchoCheck.count(b.commentary(), b.report())))
+                  .orElse(""),
+              r.colour()
+                  .map(b -> String.valueOf(betaAsides.repeats(b.commentary().aside())))
+                  .orElse("")));
     }
     Files.createDirectories(path.getParent());
     Files.write(path, lines);
-    log.info("Asides: Alpha {}, Beta {}", alphaAsides.summary(), betaAsides.summary());
+    log.info(
+        "Asides: Alpha {}, Beta {}. Alpha's claims: {}",
+        alphaAsides.summary(),
+        betaAsides.summary(),
+        alphaClaims.summary());
   }
 
   /**
-   * The asides one commentator has used in a game. A joke told twice is a weaker joke, and a model
-   * with a memory of the game can still repeat itself; nothing else in the run would notice.
+   * Lines one commentator has already used in a game: asides or claims. A joke told twice is a
+   * weaker joke, a claim made twice is filler, and a model with a memory of the game can still
+   * repeat itself; nothing else in the run would notice.
    */
-  static final class Asides {
+  static final class Repeats {
     private final Set<String> seen = new HashSet<>();
     private int told;
 
-    /** True when this aside, ignoring case, spacing and punctuation, was already used. */
-    boolean repeats(String aside) {
+    /** True when this line, ignoring case, spacing and punctuation, was already used. */
+    boolean repeats(String line) {
       String key =
-          aside == null
-              ? ""
-              : aside.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+", " ").strip();
+          line == null ? "" : line.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+", " ").strip();
       if (key.isEmpty()) {
         return false;
       }
