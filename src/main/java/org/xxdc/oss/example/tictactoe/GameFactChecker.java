@@ -22,6 +22,8 @@ import org.xxdc.oss.example.GameState;
  *       that line?
  *   <li>When it puts a player on a square ("X holds the centre"), does the player have a mark
  *       there?
+ *   <li>Does every line it names exist? A "diagonal" from top-right to bottom-right is the right
+ *       column.
  * </ol>
  *
  * <p>It checks what can be checked cheaply and exactly, and says so when it cannot. A claim that
@@ -39,26 +41,30 @@ public final class GameFactChecker implements FactChecker<GameFactChecker.Eviden
               + "|complete[sd]? (?:a|the|its) (?:row|column|diagonal|line))\\b");
   /**
    * Words that turn a sentence about winning into something else, so it is not checked as a claim
-   * that someone has won. Four families: stopping a win (blocks, prevents), a win that might come
-   * (threatens, could, potentially), a win being worked towards (trying, setting up, aims), and a
-   * win denied (not, never, fails). The guard trades recall for precision: "X wins, and O cannot
-   * recover" is skipped too, because of "cannot".
+   * that someone has won. Four families: stopping a win (blocks, preventing), a win that might come
+   * (threatens, potential, a future win), a win being worked towards (aimed, trying, a setup), and
+   * a win denied (not, without, too late).
+   *
+   * <p>Each verb is a stem with its endings, so a new inflection ("aimed", "preventing") does not
+   * slip through. The guard trades recall for precision: "X wins, and O cannot recover" is
+   * skipped too, because of "cannot".
    */
   private static final Pattern NOT_A_WIN_CLAIM =
       Pattern.compile(
           "(?i)\\b("
               // stopping a win
-              + "block|blocks|blocked|blocking|stop|stops|stopped|prevent|prevents|prevented"
-              + "|deny|denies|denied"
+              + "block(?:s|ed|ing)?|stop(?:s|ped|ping)?|prevent(?:s|ed|ing)?"
+              + "|den(?:y|ies|ied|ying)|thwart(?:s|ed|ing)?|foil(?:s|ed|ing)?"
               // a win that might come
-              + "|threat|threats|threatens|would|could|might|nearly|almost|chance"
-              + "|potential|potentially|possible|possibly"
+              + "|threat(?:s|en|ens|ened|ening)?|would|could|might|nearly|almost|chances?"
+              + "|potential(?:ly)?|possib(?:le|ly)|promis(?:e|es|ed|ing)|future|eventual(?:ly)?"
               // a win being worked towards
-              + "|try|tries|tried|trying|attempt|attempts|attempting|aim|aims|aiming"
-              + "|seek|seeks|seeking|hope|hopes|hoping|set up|sets up|setting up|towards?"
+              + "|tr(?:y|ies|ied|ying)|attempt(?:s|ed|ing)?|aim(?:s|ed|ing)?|seek(?:s|ing)?|sought"
+              + "|hop(?:e|es|ed|ing)|set(?:s|ting)? up|setups?|towards?"
+              + "|chas(?:e|es|ed|ing)|pursu(?:e|es|ed|ing)"
               // a win denied
-              + "|not|never|no|without|fail|fails|failed|unable|cannot|can't|won't|isn't|wasn't"
-              + "|no one|nobody|neither)\\b");
+              + "|not|never|no|without|fail(?:s|ed|ing)?|unable|cannot|can't|won't|isn't|wasn't"
+              + "|too late|short of|fell short|no one|nobody|neither)\\b");
 
   /**
    * What the claims are checked against.
@@ -158,6 +164,12 @@ public final class GameFactChecker implements FactChecker<GameFactChecker.Eviden
           contradicted.add("%s won, but not with %s".formatted(player, line.phrase()));
         }
       }
+    }
+
+    // A line that cannot exist is wrong whatever else the claim says, win or no win.
+    for (String reason : BoardVocabulary.impossibleLines(claim.text())) {
+      checksRun++;
+      contradicted.add(reason);
     }
 
     var squares = BoardVocabulary.squares(claim.text());

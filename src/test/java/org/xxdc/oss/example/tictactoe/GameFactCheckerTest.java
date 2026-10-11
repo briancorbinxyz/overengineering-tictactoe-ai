@@ -208,4 +208,88 @@ class GameFactCheckerTest {
     assertEquals(1, verdicts.size());
     assertEquals(Status.UNSUPPORTED, verdicts.getFirst().status());
   }
+
+  // Round 5 and 6: hedged or denied wins that slipped past the guard, one per family.
+
+  @Test
+  void anInflectedStopIsNotAWinClaim() {
+    assertFalse(GameFactChecker.isWinClaim("O is preventing immediate wins for X."));
+  }
+
+  @Test
+  void anInflectedAttemptIsNotAWinClaim() {
+    assertFalse(GameFactChecker.isWinClaim("X aimed to secure a row victory."));
+  }
+
+  @Test
+  void aSetupIsNotAWinClaim() {
+    assertFalse(GameFactChecker.isWinClaim("A promising setup for a future win."));
+  }
+
+  @Test
+  void tooLateIsNotAWinClaim() {
+    assertFalse(
+        GameFactChecker.isWinClaim("X has played the bottom-centre square, but it's too late to win."));
+  }
+
+  @Test
+  void genuineFalseWinsFromEarlierRoundsAreStillCaught() {
+    for (String claim :
+        List.of(
+            "O has completed a diagonal line across the bottom row, securing a win",
+            "O has completed a diagonal from top-right to bottom-right, securing a win",
+            "O has completed a diagonal from top-left to bottom-right, securing a win.",
+            "Turning point move 8: O secures a diagonal win.")) {
+      assertTrue(GameFactChecker.isWinClaim(claim), claim);
+    }
+    var v =
+        check(
+            "O has completed a diagonal from top-right to bottom-right, securing a win.",
+            List.of(),
+            8);
+    assertEquals(Status.CONTRADICTED, v.status());
+    assertTrue(v.reason().contains("nobody has"), v.reason());
+    assertTrue(v.reason().contains("the right column"), v.reason());
+  }
+
+  // The fixed sequences from round 6.
+  private static final List<GameState> SEQ_DEF = play(0, 4, 1, 2, 6, 3, 5, 8, 7);
+  private static final List<GameState> SEQ_RND = play(7, 4, 3, 6, 8, 2);
+
+  @Test
+  void aCorrectBottomCentreClaimIsSupported() {
+    // mistral, round 6, move 9 of SEQ_DEF: square 7 is bottom-centre, and X is on it.
+    var v =
+        checker.check(
+            new Claim("X has played the bottom-centre square, but it's too late to win.", List.of()),
+            new GameFactChecker.Evidence(SEQ_DEF, 9, 1));
+    assertEquals(Status.SUPPORTED, v.status(), v.reason());
+  }
+
+  @Test
+  void callingBottomCentreTheCentreIsStillCaught() {
+    // qwen and mistral, move 1 of SEQ_RND: X took square 7, not the centre.
+    var v =
+        checker.check(
+            new Claim("X has taken the center square.", List.of()),
+            new GameFactChecker.Evidence(SEQ_RND, 1, 1));
+    assertEquals(Status.CONTRADICTED, v.status(), v.reason());
+  }
+
+  @Test
+  void aWinningLineAcrossTheWrongRowIsStillCaught() {
+    // O wins SEQ_RND on move 6 with the anti-diagonal, not the top row.
+    var v =
+        checker.check(
+            new Claim("O completes a winning line across the top row.", List.of()),
+            new GameFactChecker.Evidence(SEQ_RND, 6, 1));
+    assertEquals(Status.CONTRADICTED, v.status(), v.reason());
+    assertEquals("O won, but not with the top row", v.reason());
+  }
+
+  @Test
+  void anImpossibleLineIsContradictedWithoutAnyWin() {
+    var v = check("O lines up a diagonal from top-right to bottom-right.", List.of(), 6);
+    assertEquals(Status.CONTRADICTED, v.status(), v.reason());
+  }
 }
