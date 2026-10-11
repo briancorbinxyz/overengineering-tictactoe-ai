@@ -20,6 +20,19 @@ artifact and adds the AI. From Episode 3 the game is no longer needed.
 
 Everything runs locally on [Ollama](https://ollama.com); no API keys.
 
+## This branch: `episode-2-qwen`
+
+Episode 2 exactly as published, except the model is `qwen3:8b` (with its thinking
+mode off) instead of `mistral`. It exists to compare the two on the same game; it
+is not an episode. The CSV file names include the model, so runs from both branches
+can sit side by side in `build/`:
+
+```bash
+ollama pull qwen3:8b
+./gradlew bootRun                     # build/episode-2-qwen3-8b-duo-window-20.csv
+git checkout episode-2 && ./gradlew bootRun   # build/episode-2-mistral-duo-window-20.csv
+```
+
 ## Run Episode 2
 
 ```bash
