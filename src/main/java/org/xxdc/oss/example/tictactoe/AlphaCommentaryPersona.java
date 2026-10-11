@@ -144,9 +144,9 @@ public final class AlphaCommentaryPersona implements CommentaryPersona {
       List<GameState> history = List.copyOf(game.history());
       int last = game.moveNumber();
       var prompt =
-          "The game is over. Give the post-game summary as claims: one claim per turning point"
-              + " you can see in this conversation, naming its move number, with that move in the"
-              + " claim's sources.";
+          "The game is over. Give the post-game summary: one claim per turning point you can"
+              + " see in this conversation. Say what it meant for the game, put its move number in"
+              + " the text (\"move 5\"), and put that move in the claim's sources.";
       var reply = ask(conversationId, prompt);
       var commentary =
           reply

@@ -29,9 +29,18 @@ public final class QuoteChecker implements FactChecker<String> {
         : new Verdict(claim, Status.CONTRADICTED, "the quotation is not the colour line, word for word");
   }
 
-  /** True when at least one claim quotes the line exactly and none quotes anything else. */
+  /**
+   * True when at least one claim quotes the line exactly. A second claim that only reacts to
+   * Alpha, with no sources, does not count against it; a stray source is counted separately by
+   * {@link #straySources}.
+   */
   public boolean quotesExactly(Commentary commentary, String offered) {
-    var tally = FactChecker.Tally.of(checkAll(commentary, offered));
-    return tally.supported() > 0 && tally.contradicted() == 0;
+    return FactChecker.Tally.of(checkAll(commentary, offered)).supported() > 0;
+  }
+
+  /** Claims whose sources are something other than the colour line, such as a label or a fact of
+   * Beta's own. */
+  public int straySources(Commentary commentary, String offered) {
+    return FactChecker.Tally.of(checkAll(commentary, offered)).contradicted();
   }
 }

@@ -34,10 +34,18 @@ public final class BetaColourCommentator {
    * @param offered the line Beta was given
    * @param quoteVerified true when a claim quotes the offered line exactly, and none quotes
    *     anything else
+   * @param straySources claims whose sources are not the colour line, such as a label or a fact
+   *     Beta added
    * @param fromModel false when the model could not be reached
+   * @param prompt what Beta was sent
    */
   public record Colour(
-      Commentary commentary, String offered, boolean quoteVerified, boolean fromModel) {}
+      Commentary commentary,
+      String offered,
+      boolean quoteVerified,
+      int straySources,
+      boolean fromModel,
+      String prompt) {}
 
   /**
    * Colour for one quiet move.
@@ -55,11 +63,12 @@ public final class BetaColourCommentator {
     Optional<Commentary> reply = ask(conversationId, prompt);
     var commentary = reply.orElseGet(() -> Commentary.factual(line));
     boolean verified = reply.isPresent() && quotes.quotesExactly(commentary, line);
+    int stray = reply.isPresent() ? quotes.straySources(commentary, line) : 0;
     log.info("  Beta: {}", commentary.answer());
     if (commentary.hasAside()) {
       log.info("    ({})", commentary.aside());
     }
-    return new Colour(commentary, line, verified, reply.isPresent());
+    return new Colour(commentary, line, verified, stray, reply.isPresent(), prompt);
   }
 
   private Optional<Commentary> ask(String conversationId, String prompt) {

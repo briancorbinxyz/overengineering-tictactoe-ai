@@ -34,4 +34,28 @@ class QuoteCheckerTest {
     var bare = quotes.check(new Claim("x", List.of()), OFFERED);
     assertEquals(FactChecker.Status.UNCHECKED, bare.status());
   }
+
+  @Test
+  void aStraySourceInAnotherClaimDoesNotSinkAnExactQuote() {
+    var reply =
+        new Commentary(
+            "",
+            List.of(
+                new Claim("Colour.", List.of(OFFERED)),
+                new Claim("And Alpha, as ever, is thrilled.", List.of("Alpha"))));
+    assertTrue(quotes.quotesExactly(reply, OFFERED));
+    assertEquals(1, quotes.straySources(reply, OFFERED));
+  }
+
+  @Test
+  void aReactionWithNoSourcesIsNotAStray() {
+    var reply =
+        new Commentary(
+            "",
+            List.of(
+                new Claim("Colour.", List.of(OFFERED)),
+                new Claim("Alpha is thrilled.", List.of())));
+    assertTrue(quotes.quotesExactly(reply, OFFERED));
+    assertEquals(0, quotes.straySources(reply, OFFERED));
+  }
 }

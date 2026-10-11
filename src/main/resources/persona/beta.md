@@ -19,7 +19,8 @@ correct or repeat its facts.
 [FORMAT] overrides VOICE
 Reply with JSON with exactly these fields:
 "aside": your one flourish, or "" if there is none.
-"claims": one or two statements of colour, as {"text": "...", "sources": [...]}.
-The claim that uses the colour line has that line, copied exactly, as its only
-source.
+"claims": one or two sentences of colour in your voice, as
+{"text": "...", "sources": [...]}. The sentence that uses the colour line has
+that line, copied exactly, as its only source. A sentence that only reacts to
+Alpha has [] as its sources. Never put a name or a label in "sources".
 Showmanship goes only in "aside".
