@@ -63,14 +63,13 @@ public record MoveReport(
         .append(", column ")
         .append(column)
         .append(".\n");
-    turningPoint.ifPresent(
-        tp ->
-            out.append("Turning point: ")
-                .append(player)
-                .append(' ')
-                .append(describe(tp))
-                .append(".\n"));
-    result.ifPresent(r -> out.append("Result: ").append(r).append(".\n"));
+    // Both lines are always present. An absent line proves nothing to a model: it does not
+    // notice what is missing, and invents significance or a result to fill the gap. A line that
+    // says "none" gives it something to contradict instead.
+    out.append("Turning point: ")
+        .append(turningPoint.map(tp -> player + " " + describe(tp)).orElse("none, a quiet move"))
+        .append(".\n");
+    out.append("Result: ").append(result.orElse("none, play continues")).append(".\n");
     out.append("Board:\n").append(board);
     colour.ifPresent(c -> out.append("Colour you may use: ").append(c).append('\n'));
     return out.toString();

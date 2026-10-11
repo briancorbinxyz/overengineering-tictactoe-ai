@@ -41,7 +41,9 @@ Each run writes two files to `build/`, named `episode-2-<model>-<mode>-window-<N
 - `.csv`: one row per move plus the post-game summary, with prompt tokens, Alpha's
   claims counted by verdict (supported, contradicted, unsupported, unchecked) with
   the reason for each failure, how many claims only echo the move report, whether a
-  reply went over three claims, and whether Beta quoted its colour line exactly;
+  reply went over three claims, whether Beta quoted its colour line exactly, and
+  whether each aside repeats one already told in the game (the log prints a
+  distinct-aside count per commentator);
 - `.jsonl`: the same rows in full, with every prompt, claim and source.
 
 A clean verdict sheet is only worth something if the echo count is low: a claim

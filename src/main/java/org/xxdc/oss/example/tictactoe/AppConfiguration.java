@@ -4,10 +4,14 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.function.ToIntFunction;
 import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Bean;
@@ -32,6 +36,8 @@ import org.xxdc.oss.example.bot.BotStrategy;
  */
 @Configuration
 public class AppConfiguration {
+
+  private static final Logger log = LoggerFactory.getLogger(AppConfiguration.class);
 
   /**
    * AlphaBeta plays perfectly, so against MCTS almost every game is a draw. Set {@code
@@ -97,9 +103,14 @@ public class AppConfiguration {
     lines.add(
         "move,from_model,prompt_tokens,claims,over_limit,echoes,supported,contradicted,"
             + "unsupported,unchecked,problems,aside,answer,beta_answer,beta_quote_verified,"
-            + "beta_stray_sources");
+            + "beta_stray_sources,aside_repeat,beta_aside_repeat");
+    var alphaAsides = new Asides();
+    var betaAsides = new Asides();
     for (var r : rows) {
       var t = FactChecker.Tally.of(r.verdicts());
+      boolean alphaRepeat = alphaAsides.repeats(r.commentary().aside());
+      String betaRepeat =
+          r.colour().map(b -> String.valueOf(betaAsides.repeats(b.commentary().aside()))).orElse("");
       int claims = r.commentary().claims().size();
       lines.add(
           String.join(
@@ -119,10 +130,39 @@ public class AppConfiguration {
               quote(r.commentary().answer()),
               quote(r.colour().map(b -> b.commentary().answer()).orElse("")),
               r.colour().map(b -> String.valueOf(b.quoteVerified())).orElse(""),
-              r.colour().map(b -> String.valueOf(b.straySources())).orElse("")));
+              r.colour().map(b -> String.valueOf(b.straySources())).orElse(""),
+              String.valueOf(alphaRepeat),
+              betaRepeat));
     }
     Files.createDirectories(path.getParent());
     Files.write(path, lines);
+    log.info("Asides: Alpha {}, Beta {}", alphaAsides.summary(), betaAsides.summary());
+  }
+
+  /**
+   * The asides one commentator has used in a game. A joke told twice is a weaker joke, and a model
+   * with a memory of the game can still repeat itself; nothing else in the run would notice.
+   */
+  static final class Asides {
+    private final Set<String> seen = new HashSet<>();
+    private int told;
+
+    /** True when this aside, ignoring case, spacing and punctuation, was already used. */
+    boolean repeats(String aside) {
+      String key =
+          aside == null
+              ? ""
+              : aside.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+", " ").strip();
+      if (key.isEmpty()) {
+        return false;
+      }
+      told++;
+      return !seen.add(key);
+    }
+
+    String summary() {
+      return "%d distinct of %d".formatted(seen.size(), told);
+    }
   }
 
   /** One JSON object per row, written by hand so the episode needs no JSON library of its own. */

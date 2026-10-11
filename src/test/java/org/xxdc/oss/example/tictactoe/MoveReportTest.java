@@ -39,6 +39,15 @@ class MoveReportTest {
   }
 
   @Test
+  void aBareMoveSaysSoRatherThanLeavingLinesOut() {
+    // A model does not notice an absent line, so "nothing happened" is stated outright.
+    var before = empty();
+    var report = MoveReport.of(before, before.afterPlayerMoves(0), 1, Optional.empty());
+    assertTrue(report.toPrompt().contains("Turning point: none, a quiet move."));
+    assertTrue(report.toPrompt().contains("Result: none, play continues."));
+  }
+
+  @Test
   void theBoardIsRenderedOneRowPerLine() {
     var state = empty().afterPlayerMoves(0).afterPlayerMoves(4);
     assertEquals("X . .\n. O .\n. . .\n", MoveReport.render(state));
