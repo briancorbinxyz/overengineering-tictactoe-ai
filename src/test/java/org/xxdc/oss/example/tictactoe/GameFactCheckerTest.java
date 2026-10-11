@@ -105,10 +105,47 @@ class GameFactCheckerTest {
   }
 
   @Test
-  void blockingAWinIsNotAWinClaim() {
+  void stoppingAWinIsNotAWinClaim() {
     assertFalse(GameFactChecker.isWinClaim("O blocks X from winning on the diagonal."));
+    assertFalse(GameFactChecker.isWinClaim("That move prevented an X victory."));
+  }
+
+  @Test
+  void aWinThatMightComeIsNotAWinClaim() {
     assertFalse(GameFactChecker.isWinClaim("X threatens to win next move."));
+    assertFalse(GameFactChecker.isWinClaim("X is potentially setting up a winning strategy."));
+    assertFalse(GameFactChecker.isWinClaim("This sets the stage for a potential win for O."));
+  }
+
+  @Test
+  void aWinBeingWorkedTowardsIsNotAWinClaim() {
+    assertFalse(GameFactChecker.isWinClaim("O is trying to complete a line."));
+    assertFalse(GameFactChecker.isWinClaim("X aims for victory down the left column."));
+  }
+
+  @Test
+  void aWinDeniedIsNotAWinClaim() {
+    assertFalse(GameFactChecker.isWinClaim("A fine move, but it's not enough to win."));
+    assertFalse(GameFactChecker.isWinClaim("X never looked like winning this one."));
+  }
+
+  @Test
+  void aBareAssertionOfAWinIsStillAWinClaim() {
     assertTrue(GameFactChecker.isWinClaim("O wins."));
+    // From a qwen3:8b run, in a game that was drawn.
+    assertTrue(
+        GameFactChecker.isWinClaim(
+            "O has completed a diagonal line across the bottom row, securing a win."));
+  }
+
+  @Test
+  void aClaimWithTheMoveOnlyInItsSourcesIsStillCheckedForPlayer() {
+    // mistral's habit: the move number in sources, never in the text. Move 4 was O's.
+    var right = check("O blocked an immediate loss.", List.of("move 4"), 9);
+    assertEquals(Status.SUPPORTED, right.status(), right.reason());
+    var wrong = check("X blocked an immediate loss.", List.of("move 4"), 9);
+    assertEquals(Status.CONTRADICTED, wrong.status());
+    assertEquals("move 4 was O's, not X's", wrong.reason());
   }
 
   @Test

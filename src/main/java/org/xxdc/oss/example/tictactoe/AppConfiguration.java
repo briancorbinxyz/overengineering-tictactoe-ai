@@ -33,9 +33,6 @@ import org.xxdc.oss.example.bot.BotStrategy;
 @Configuration
 public class AppConfiguration {
 
-  /** The most claims a reply should make; the prompt asks for no more, and the CSV flags excess. */
-  static final int CLAIM_LIMIT = 3;
-
   /**
    * AlphaBeta plays perfectly, so against MCTS almost every game is a draw. Set {@code
    * game.x-strategy=RANDOM} to see wins, and with them real win commentary for the checks.
@@ -111,7 +108,7 @@ public class AppConfiguration {
               String.valueOf(r.fromModel()),
               r.promptTokens() == null ? "" : r.promptTokens().toString(),
               String.valueOf(claims),
-              String.valueOf(claims > CLAIM_LIMIT),
+              String.valueOf(claims > Commentary.MAX_CLAIMS),
               String.valueOf(EchoCheck.count(r.commentary(), r.prompt())),
               String.valueOf(t.supported()),
               String.valueOf(t.contradicted()),

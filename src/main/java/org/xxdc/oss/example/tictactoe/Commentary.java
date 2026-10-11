@@ -1,5 +1,6 @@
 package org.xxdc.oss.example.tictactoe;
 
+import io.swagger.v3.oas.annotations.media.ArraySchema;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -10,10 +11,19 @@ import java.util.stream.Collectors;
  * each statement with its own sources. {@code aside} is the joke, and it is deliberately
  * unchecked, which is why it may not contain anything a checker could check.
  *
- * @param aside one short joke, or empty; no move numbers, results or other facts
+ * @param aside one short joke, or empty; it may react to the move, but states no move number or
+ *     result
  * @param claims one to three statements, each with the sources it rests on
  */
-public record Commentary(String aside, List<Claim> claims) {
+public record Commentary(
+    String aside, @ArraySchema(minItems = 1, maxItems = MAX_CLAIMS) List<Claim> claims) {
+
+  /**
+   * The most claims a reply may make. It is in the JSON schema Spring AI sends, so {@code
+   * validateSchema()} rejects a longer reply and asks again, whether or not the model's
+   * constrained decoding honours it.
+   */
+  public static final int MAX_CLAIMS = 3;
 
   public Commentary {
     aside = aside == null ? "" : aside.strip();

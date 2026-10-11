@@ -33,10 +33,28 @@ public final class GameFactChecker implements FactChecker<GameFactChecker.Eviden
       Pattern.compile(
           "(?i)\\b(wins|won|win|winning|victory|victorious|three in a row"
               + "|complete[sd]? (?:a|the|its) (?:row|column|diagonal|line))\\b");
+  /**
+   * Words that turn a sentence about winning into something else, so it is not checked as a claim
+   * that someone has won. Four families: stopping a win (blocks, prevents), a win that might come
+   * (threatens, could, potentially), a win being worked towards (trying, setting up, aims), and a
+   * win denied (not, never, fails). The guard trades recall for precision: "X wins, and O cannot
+   * recover" is skipped too, because of "cannot".
+   */
   private static final Pattern NOT_A_WIN_CLAIM =
       Pattern.compile(
-          "(?i)\\b(block|blocks|blocked|blocking|stop|stops|prevent|prevents|deny|denies"
-              + "|threat|threatens|would|could|might|nearly|almost|chance|no one|nobody|neither)\\b");
+          "(?i)\\b("
+              // stopping a win
+              + "block|blocks|blocked|blocking|stop|stops|stopped|prevent|prevents|prevented"
+              + "|deny|denies|denied"
+              // a win that might come
+              + "|threat|threats|threatens|would|could|might|nearly|almost|chance"
+              + "|potential|potentially|possible|possibly"
+              // a win being worked towards
+              + "|try|tries|tried|trying|attempt|attempts|attempting|aim|aims|aiming"
+              + "|seek|seeks|seeking|hope|hopes|hoping|set up|sets up|setting up|towards?"
+              // a win denied
+              + "|not|never|fail|fails|failed|unable|cannot|can't|won't|isn't|wasn't"
+              + "|no one|nobody|neither)\\b");
 
   /**
    * What the claims are checked against.
@@ -91,8 +109,11 @@ public final class GameFactChecker implements FactChecker<GameFactChecker.Eviden
     }
 
     List<String> named = evidence.players().stream().filter(p -> names(claim.text(), p)).toList();
-    if (mentioned.size() == 1 && named.size() == 1) {
-      int m = mentioned.iterator().next();
+    // The move a claim is about: the one in its text, or, when the text names none, the one in
+    // its sources. "O blocked an immediate loss" with sources ["move 4"] is about move 4.
+    Set<Integer> about = mentioned.isEmpty() ? cited : mentioned;
+    if (about.size() == 1 && named.size() == 1) {
+      int m = about.iterator().next();
       if (m >= 1 && m <= evidence.currentMove()) {
         checksRun++;
         String actual = evidence.playerOf(m);
@@ -104,8 +125,8 @@ public final class GameFactChecker implements FactChecker<GameFactChecker.Eviden
     }
 
     if (isWinClaim(claim.text()) && named.size() == 1) {
-      int m = mentioned.size() == 1 ? mentioned.iterator().next() : evidence.currentMove();
-      if (mentioned.size() <= 1 && m >= 1 && m <= evidence.currentMove()) {
+      int m = about.size() == 1 ? about.iterator().next() : evidence.currentMove();
+      if (about.size() <= 1 && m >= 1 && m <= evidence.currentMove()) {
         checksRun++;
         GameState state = evidence.history().get(m);
         String player = named.getFirst();
