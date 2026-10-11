@@ -5,6 +5,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
+import java.util.function.ToIntFunction;
 import java.util.stream.Collectors;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
@@ -12,6 +14,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.xxdc.oss.example.BotPlayer;
 import org.xxdc.oss.example.Game;
+import org.xxdc.oss.example.GameState;
 import org.xxdc.oss.example.PlayerNode;
 import org.xxdc.oss.example.bot.BotStrategy;
 
@@ -37,12 +40,26 @@ public class AppConfiguration {
    * AlphaBeta plays perfectly, so against MCTS almost every game is a draw. Set {@code
    * game.x-strategy=RANDOM} to see wins, and with them real win commentary for the checks.
    */
-  Game newGame(BotStrategy x, BotStrategy o) {
+  Game newGame(ToIntFunction<GameState> x, ToIntFunction<GameState> o) {
     return new Game(
         3,
         false,
         new PlayerNode.Local<>("X", new BotPlayer(x)),
         new PlayerNode.Local<>("O", new BotPlayer(o)));
+  }
+
+  /** The named strategies are static fields on {@link BotStrategy}, not enum constants. */
+  static ToIntFunction<GameState> strategy(String name) {
+    return switch (name.strip().toUpperCase(Locale.ROOT)) {
+      case "RANDOM" -> BotStrategy.RANDOM;
+      case "MINIMAX" -> BotStrategy.MINIMAX;
+      case "ALPHABETA" -> BotStrategy.ALPHABETA;
+      case "MAXN" -> BotStrategy.MAXN;
+      case "PARANOID" -> BotStrategy.PARANOID;
+      case "MCTS" -> BotStrategy.MCTS;
+      case "DEFAULT" -> BotStrategy.DEFAULT;
+      default -> throw new IllegalArgumentException("unknown bot strategy: " + name);
+    };
   }
 
   @Bean
@@ -52,8 +69,10 @@ public class AppConfiguration {
       @Value("${alpha.play-on-startup:true}") boolean play,
       @Value("${commentary.mode:duo}") String mode,
       @Value("${spring.ai.ollama.chat.model:mistral}") String model,
-      @Value("${game.x-strategy:ALPHABETA}") BotStrategy x,
-      @Value("${game.o-strategy:MCTS}") BotStrategy o) {
+      @Value("${game.x-strategy:ALPHABETA}") String xStrategy,
+      @Value("${game.o-strategy:MCTS}") String oStrategy) {
+    var x = strategy(xStrategy);
+    var o = strategy(oStrategy);
     return _ -> {
       if (!play) {
         return;
