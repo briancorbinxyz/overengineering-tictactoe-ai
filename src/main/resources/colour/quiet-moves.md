@@ -1,8 +1,10 @@
 # Colour for quiet moves
 #
-# One line is offered to Alpha on each move that is not a strategic turning point.
+# One line is offered on each move that is not a strategic turning point: to Beta,
+# or to Alpha when it commentates alone.
 # Lines are used in order and never repeated within a game. This is deliberately
-# not retrieval: the program picks the line, not the model. Episode 3 changes that.
+# not retrieval: the program picks the line, not the model. From Episode 3, Beta
+# has to find its own.
 # Every line here should be checkable; sources are in the article.
 
 - Played perfectly by both sides, tic-tac-toe is always a draw.

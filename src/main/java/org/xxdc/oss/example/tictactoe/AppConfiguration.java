@@ -16,7 +16,8 @@ import org.xxdc.oss.example.bot.BotStrategy;
 
 /**
  * Plays one bot-versus-bot game with Alpha commentating, then writes a per-move record to
- * {@code build/alpha-episode-2-window-<N>.csv}: prompt tokens, citations, and whether they held up.
+ * {@code build/episode-2-<mode>-window-<N>.csv}: prompt tokens, citations, whether they held up,
+ * and whether Beta quoted its colour line exactly.
  */
 @Configuration
 public class AppConfiguration {
@@ -33,7 +34,8 @@ public class AppConfiguration {
   CommandLineRunner playOneGame(
       AlphaCommentaryPersona alpha,
       @Value("${alpha.memory.max-messages:20}") int window,
-      @Value("${alpha.play-on-startup:true}") boolean play) {
+      @Value("${alpha.play-on-startup:true}") boolean play,
+      @Value("${commentary.mode:duo}") String mode) {
     return _ -> {
       if (!play) {
         return;
@@ -45,7 +47,7 @@ public class AppConfiguration {
 
         var rows = new ArrayList<>(broadcast.moves());
         rows.add(summary);
-        write(Path.of("build", "alpha-episode-2-window-" + window + ".csv"), rows);
+        write(Path.of("build", "episode-2-" + mode + "-window-" + window + ".csv"), rows);
       }
     };
   }
@@ -55,7 +57,7 @@ public class AppConfiguration {
     var lines = new ArrayList<String>();
     lines.add(
         "move,from_model,prompt_tokens,mentioned,invalid,out_of_sight,uncited,player_checks,"
-            + "player_correct,answer");
+            + "player_correct,answer,beta_answer,beta_quote_verified");
     for (var r : rows) {
       var c = r.check();
       lines.add(
@@ -70,7 +72,9 @@ public class AppConfiguration {
               quote(c.uncited().toString()),
               String.valueOf(c.playerChecks()),
               String.valueOf(c.playerCorrect()),
-              quote(r.commentary().answer())));
+              quote(r.commentary().answer()),
+              quote(r.colour().map(b -> b.commentary().answer()).orElse("")),
+              r.colour().map(b -> String.valueOf(b.quoteVerified())).orElse("")));
     }
     Files.createDirectories(path.getParent());
     Files.write(path, lines);

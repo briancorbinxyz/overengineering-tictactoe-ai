@@ -1,11 +1,13 @@
 package org.xxdc.oss.example.tictactoe;
 
+import java.util.Optional;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.memory.ChatMemoryRepository;
 import org.springframework.ai.chat.memory.MessageWindowChatMemory;
 import org.springframework.ai.chat.prompt.ChatOptions;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -41,12 +43,43 @@ class AlphaConfiguration {
         .build();
   }
 
+  /**
+   * Beta, the colour commentator. Its own system prompt and a warmer temperature; it shares the
+   * memory store with Alpha but always under its own conversation id.
+   */
+  @Bean
+  ChatClient betaChatClient(
+      ChatClient.Builder builder,
+      ChatMemory chatMemory,
+      @Value("classpath:persona/beta.md") Resource persona) {
+    return builder
+        .defaultSystem(persona)
+        .defaultOptions(ChatOptions.builder().temperature(0.7))
+        .defaultAdvisors(MessageChatMemoryAdvisor.builder(chatMemory).build())
+        .build();
+  }
+
+  @Bean
+  ColourLines colourLines(@Value("classpath:colour/quiet-moves.md") Resource colour) {
+    return ColourLines.from(colour);
+  }
+
+  /**
+   * {@code commentary.mode=duo} (the default) puts Beta in the booth for colour on quiet moves;
+   * {@code solo} leaves Alpha alone, with the colour lines offered to Alpha instead.
+   */
   @Bean
   AlphaCommentaryPersona alpha(
-      ChatClient alphaChatClient,
-      @Value("classpath:colour/quiet-moves.md") Resource colour,
-      @Value("${alpha.memory.max-messages:20}") int maxMessages) {
+      @Qualifier("alphaChatClient") ChatClient alphaChatClient,
+      @Qualifier("betaChatClient") ChatClient betaChatClient,
+      ColourLines colourLines,
+      @Value("${alpha.memory.max-messages:20}") int maxMessages,
+      @Value("${commentary.mode:duo}") String mode) {
+    Optional<BetaColourCommentator> beta =
+        "solo".equalsIgnoreCase(mode)
+            ? Optional.empty()
+            : Optional.of(new BetaColourCommentator(betaChatClient, colourLines));
     return new AlphaCommentaryPersona(
-        alphaChatClient, new EsportsLiveCommentaryPersona(), ColourLines.from(colour), maxMessages);
+        alphaChatClient, new EsportsLiveCommentaryPersona(), colourLines, maxMessages, beta);
   }
 }

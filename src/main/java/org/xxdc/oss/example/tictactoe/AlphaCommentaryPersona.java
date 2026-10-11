@@ -10,7 +10,6 @@ import org.springframework.ai.chat.client.ResponseEntity;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.xxdc.oss.example.Game;
-import org.xxdc.oss.example.GameContext;
 import org.xxdc.oss.example.GameState;
 import org.xxdc.oss.example.analysis.StrategicTurningPoint;
 import org.xxdc.oss.example.commentary.CommentaryPersona;
@@ -31,32 +30,46 @@ public final class AlphaCommentaryPersona implements CommentaryPersona {
   private final CommentaryPersona scripted;
   private final ColourLines colour;
   private final int memoryWindow;
+  private final Optional<BetaColourCommentator> beta;
 
+  /**
+   * @param beta the colour commentator, or empty for a single-commentator broadcast, in which case
+   *     Alpha is offered the colour lines itself
+   */
   public AlphaCommentaryPersona(
-      ChatClient chatClient, CommentaryPersona scripted, ColourLines colour, int memoryWindow) {
+      ChatClient chatClient,
+      CommentaryPersona scripted,
+      ColourLines colour,
+      int memoryWindow,
+      Optional<BetaColourCommentator> beta) {
     this.chatClient = chatClient;
     this.scripted = scripted;
     this.colour = colour;
     this.memoryWindow = memoryWindow;
+    this.beta = beta;
   }
 
-  /** One move's commentary, with what it cost and whether its back-references hold up. */
+  /**
+   * One move's commentary, with what it cost and whether its back-references hold up. {@code
+   * colour} is Beta's contribution on a quiet move, when there is one.
+   */
   public record MoveCommentary(
       int move,
       String prompt,
       Commentary commentary,
       Integer promptTokens,
       CitationCheck.Result check,
-      boolean fromModel) {}
+      boolean fromModel,
+      Optional<BetaColourCommentator.Colour> colour) {}
 
   /**
    * Episode 1's contract: comment on a turning point. The conversation id comes from the game's
-   * {@link GameContext}, a scoped value bound for the duration of {@code Game.play}, so this only
+   * {@code GameContext}, a scoped value bound for the duration of {@code Game.play}, so this only
    * works while a game is being played.
    */
   @Override
   public String comment(StrategicTurningPoint turningPoint) {
-    Optional<String> gameId = Game.gameContext().map(GameContext::id);
+    Optional<String> gameId = Game.gameContext().map(c -> c.id() + ":alpha");
     if (gameId.isEmpty()) {
       return scripted.comment(turningPoint);
     }
@@ -78,15 +91,20 @@ public final class AlphaCommentaryPersona implements CommentaryPersona {
     return new Broadcast(game.id().toString());
   }
 
-  /** Commentary for one game. One conversation id, one memory. */
+  /**
+   * Commentary for one game. Each commentator has its own conversation, and so its own memory:
+   * in a shared one, both would appear as "the assistant" and the model would blur who said what.
+   */
   public final class Broadcast {
 
     private final String conversationId;
+    private final String betaConversationId;
     private final List<MoveCommentary> moves = new ArrayList<>();
     private int quietMoves;
 
-    private Broadcast(String conversationId) {
-      this.conversationId = conversationId;
+    private Broadcast(String gameId) {
+      this.conversationId = gameId + ":alpha";
+      this.betaConversationId = gameId + ":beta";
     }
 
     /** Called by the game after every move. */
@@ -96,24 +114,26 @@ public final class AlphaCommentaryPersona implements CommentaryPersona {
       GameState before = history.get(history.size() - 2);
       GameState after = history.getLast();
 
-      var report = MoveReport.of(before, after, n, colour.forQuietMove(quietMoves));
-      if (report.quiet()) {
-        quietMoves++;
-      }
+      // Pick the colour line first; who gets it depends on whether Beta is in the booth.
+      var bare = MoveReport.of(before, after, n, Optional.empty());
+      Optional<String> line = bare.quiet() ? colour.forQuietMove(quietMoves++) : Optional.empty();
+      var report = beta.isPresent() ? bare : MoveReport.of(before, after, n, line);
       var prompt = report.toPrompt();
       var players = after.playerMarkers();
       var reply = ask(conversationId, prompt);
       var commentary =
           reply.map(ResponseEntity::entity).orElseGet(() -> Commentary.factual(report.plainLine()));
       var check = CitationCheck.check(commentary, n, earliestVisible(n), players);
-      var mc =
-          new MoveCommentary(
-              n, prompt, commentary, promptTokens(reply), check, answered(reply));
-      moves.add(mc);
       log.info("Move {}: {}", n, commentary.answer());
       if (commentary.hasAside()) {
         log.info("  ({})", commentary.aside());
       }
+      // Beta speaks on quiet moves only, after Alpha. Turning points are Alpha's.
+      Optional<BetaColourCommentator.Colour> said =
+          beta.flatMap(b -> line.map(l -> b.onQuietMove(betaConversationId, report, commentary, l)));
+      moves.add(
+          new MoveCommentary(
+              n, prompt, commentary, promptTokens(reply), check, answered(reply), said));
     }
 
     /** The post-game summary, from memory. Turning points are not re-sent. */
@@ -133,7 +153,13 @@ public final class AlphaCommentaryPersona implements CommentaryPersona {
               commentary, last, earliestVisible(last + 1), history.getLast().playerMarkers());
       var mc =
           new MoveCommentary(
-              last + 1, prompt, commentary, promptTokens(reply), check, answered(reply));
+              last + 1,
+              prompt,
+              commentary,
+              promptTokens(reply),
+              check,
+              answered(reply),
+              Optional.empty());
       log.info("Post-game: {}", commentary.answer());
       return mc;
     }

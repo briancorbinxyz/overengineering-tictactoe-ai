@@ -43,6 +43,28 @@ public final class ColourLines {
         : Optional.empty();
   }
 
+  /**
+   * True when the citations are exactly the offered line, which is in this file. Surrounding
+   * whitespace and one pair of surrounding quotation marks are ignored; nothing else is. A
+   * paraphrase, a fact from elsewhere, or a line that is not in the file all fail.
+   */
+  public boolean quotesExactly(List<String> citations, String offered) {
+    if (citations.isEmpty() || !lines.contains(offered)) {
+      return false;
+    }
+    return citations.stream().map(ColourLines::unquote).allMatch(offered::equals);
+  }
+
+  static String unquote(String s) {
+    var t = s.strip();
+    if (t.length() >= 2
+        && ((t.startsWith("\"") && t.endsWith("\""))
+            || (t.startsWith("“") && t.endsWith("”")))) {
+      t = t.substring(1, t.length() - 1).strip();
+    }
+    return t;
+  }
+
   public int size() {
     return lines.size();
   }
