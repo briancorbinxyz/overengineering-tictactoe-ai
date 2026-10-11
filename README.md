@@ -32,12 +32,20 @@ ollama serve   # if it is not already running
 ./gradlew bootRun --args='--alpha.memory.max-messages=6'
 # Alpha alone, no Beta
 ./gradlew bootRun --args='--commentary.mode=solo'
+# a game someone can win (AlphaBeta against MCTS nearly always draws)
+./gradlew bootRun --args='--game.x-strategy=RANDOM'
 ```
 
-Each run writes `build/episode-2-<mode>-window-<N>.csv`: one row per move plus the
-post-game summary, with prompt tokens, Alpha's claims counted by verdict (supported,
-contradicted, unsupported, unchecked) with the reason for each failure, and Beta's
-line with whether it quoted its colour exactly.
+Each run writes two files to `build/`, named `episode-2-<model>-<mode>-window-<N>`:
+
+- `.csv`: one row per move plus the post-game summary, with prompt tokens, Alpha's
+  claims counted by verdict (supported, contradicted, unsupported, unchecked) with
+  the reason for each failure, how many claims only echo the move report, whether a
+  reply went over three claims, and whether Beta quoted its colour line exactly;
+- `.jsonl`: the same rows in full, with every prompt, claim and source.
+
+A clean verdict sheet is only worth something if the echo count is low: a claim
+that reads the report back is always true and says nothing.
 
 `./gradlew test` needs no model: the context test skips the game, and the other
 tests do not start Spring.
@@ -56,5 +64,6 @@ tests do not start Spring.
 | `FactChecker` | Checks claims against evidence and returns a verdict for each |
 | `GameFactChecker` | Checks Alpha's claims against the game's history: moves, players, and claimed wins |
 | `QuoteChecker` | Checks Beta's quotation against the colour file, word for word |
+| `EchoCheck` | Counts claims that only read the move report back |
 | `AlphaConfiguration` | Both `ChatClient`s, memory window, temperatures, solo or duo |
 | `AppConfiguration` | Plays one game and writes the CSV |
