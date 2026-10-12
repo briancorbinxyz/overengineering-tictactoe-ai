@@ -7,7 +7,7 @@ describes and compare one episode with the next.
 | Episode | Branch | What it adds | Stack |
 |---|---|---|---|
 | [1](https://briancorbinxyz.medium.com/rags-to-riches-with-spring-ai-episode-1-44d4f604b565) | [`episode-1`](../../tree/episode-1) | A commentator persona for over-engineered tic-tac-toe | Spring AI 1.0.2, Spring Boot 3.5.6 |
-| 2 | [`episode-2`](../../tree/episode-2) | Alpha calls every move and Beta adds colour on quiet moves: a memory per commentator per game, structured output, and model-free fact checks of Alpha's claims and Beta's quotations | Spring AI 2.0.1, Spring Boot 4.1.1, Java 25 |
+| 2 | [`episode-2`](../../tree/episode-2) | Alpha calls every move and Beta adds colour on quiet moves: a memory per commentator per game, structured output, and model-free fact checks of Alpha's claims and Beta's quotations. [Incident report](../episode-2/docs/episode-2-incident-report.md): seven rounds of measuring them | Spring AI 2.0.1, Spring Boot 4.1.1, Java 25 |
 | 3 | `episode-3` (in progress) | Alpha and Beta move from tic-tac-toe to an archive of more than a million words: a deliberately naive RAG baseline, every answer traced back to its source, and a golden question set to measure later episodes against | Spring AI 2.0.1 |
 
 Compare any two episodes on GitHub with
@@ -49,6 +49,10 @@ Each run writes two files to `build/`, named `episode-2-<model>-<mode>-window-<N
   told, and for Beta whether it quoted its colour line exactly, stray sources and
   echoes (the log prints distinct counts for asides and claims);
 - `.jsonl`: the same rows in full, with every prompt, claim and source.
+
+[`docs/episode-2-incident-report.md`](docs/episode-2-incident-report.md) is the
+full log of how the checks were measured and fixed over seven rounds, with the two
+replay sequences and the commands to reproduce them.
 
 A clean verdict sheet is only worth something if the echo count is low and the
 checked share is high: a claim that reads the report back is always true and says
