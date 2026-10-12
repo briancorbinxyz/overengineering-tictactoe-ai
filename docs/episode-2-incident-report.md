@@ -28,6 +28,78 @@ The question each round was simple: when the checker says a claim is wrong, is i
 A flag is a *genuine* error when the board shows the model was wrong, and a *false
 positive* when the claim was right and the checker misread it.
 
+## How the checks work
+
+The article describes `GameFactChecker`'s six questions. This is the detail behind
+them, as of the last round (`353d4a9`).
+
+**Which move a claim is about.** During the game, a claim is about the move named in
+its text, or the current move if it names none. Its sources are not a guide: models
+cite the move a move responds to, so a claim about move 8 sourced to move 7 is still
+about move 8. Only in the post-game summary, where there is no current move, does a
+claim with no move in its text take the move from its sources.
+
+**Squares and lines.** `BoardVocabulary` maps phrases to squares, numbered 0 to 8
+from the top left:
+
+- corners: "the top-left corner", "a corner";
+- edges: "the bottom edge", "bottom-middle", "bottom-centre", "centre-left";
+- the centre: "the centre", "the center square", but not the "centre" inside
+  "bottom-centre";
+- "row R, column C", as the move reports say it;
+- lines: "the top row", "the middle column", "the anti-diagonal", "the top-left to
+  bottom-right diagonal", and two corners joined ("from top-right to bottom-right"),
+  which name the row or column they share.
+
+Lines are matched before squares, and each match is blanked before the next pattern
+runs, so a diagonal is not also read as two corners. The square check is lenient on
+purpose: a claim holds if the player has a mark on any square the phrase can mean,
+after that move, so "X holds the centre" passes whether X took it now or earlier.
+
+**Lines that cannot exist.** A "diagonal" between two corners that share a row or a
+column, or a diagonal said to run along a row or a column, is contradicted whether or
+not a win is claimed.
+
+**Telling a claimed win from talk about winning.** A claim counts as a claimed win when
+it uses a word such as "wins", "won", "victory" or "completes a line", and none of four
+families of words that turn it into something else:
+
+| Family | Examples |
+|---|---|
+| Stopping a win | block, stop, prevent, deny, thwart, foil, with every ending |
+| A win that might come | threaten, would, could, might, almost, potential, promising, future, eventual |
+| A win being worked towards | try, attempt, aim, seek, hope, set up, setup, towards, chase, pursue |
+| A win denied | not, never, no, without, fail, unable, cannot, too late, short of, fell short |
+
+Each verb is a stem with its endings (`prevent(?:s|ed|ing)?`), because listing word
+forms one at a time missed a new inflection in four rounds running. The guard trades
+recall for precision: "X wins, and O cannot recover" is skipped too, because of
+"cannot".
+
+**Asides.** Nothing checks an aside, so an aside that mentions a move number or a win
+is flagged as unsupported: a fact must not hide in the joke.
+
+**Echoes.** `EchoCheck` marks a claim as an echo when at least 80% of its words,
+ignoring a short list of common words, already appear in the move report it was
+given. Claims under three words never count. Beta's sentences are compared with the
+move report only, so quoting its own colour line is not an echo.
+
+**What each run records.** The CSV has one row per move, plus the post-game summary:
+
+| Column | Meaning |
+|---|---|
+| `prompt_tokens` | As Ollama reports them; a validation retry adds its own usage |
+| `claims`, `over_limit` | How many claims, and whether that broke the limit of three |
+| `supported`, `contradicted`, `unsupported`, `unchecked` | Alpha's claims by verdict |
+| `problems` | The checker's reason for each contradicted or unsupported claim |
+| `checked_share` | The share of claims with anything checkable in them |
+| `echoes`, `claim_repeats` | Claims that read the report back, or repeat an earlier claim |
+| `aside`, `aside_repeat` | Alpha's joke, and whether it was already told this game |
+| `beta_quote_verified`, `beta_stray_sources`, `beta_echoes`, `beta_aside_repeat` | The same questions for Beta |
+
+The JSONL file holds the same rows in full, with every prompt, claim and source, and
+the log prints the game's moves in the form `--game.moves` takes.
+
 ## The shape of it
 
 | Round | Flags | Genuine model errors | Checker false positives | Share genuine |
