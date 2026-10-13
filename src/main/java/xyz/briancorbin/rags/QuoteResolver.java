@@ -115,13 +115,13 @@ public final class QuoteResolver implements FactChecker<List<Document>> {
   static String normalise(String s) {
     String t = Normalizer.normalize(s == null ? "" : s, Normalizer.Form.NFKC);
     t =
-        t.replace('‘', '\'')
-            .replace('’', '\'')
-            .replace('“', '"')
-            .replace('”', '"')
-            .replace('–', '-')
-            .replace('—', '-')
-            .replace("…", "...");
+        t.replace('\u2018', '\'')
+            .replace('\u2019', '\'')
+            .replace('\u201C', '"')
+            .replace('\u201D', '"')
+            .replace('\u2013', '-')
+            .replace('\u2014', '-')
+            .replace("\u2026", "...");
     t = t.replaceAll("\\s+", " ").strip();
     return unquote(t);
   }
