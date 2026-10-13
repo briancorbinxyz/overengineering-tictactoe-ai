@@ -90,7 +90,7 @@ public final class PrefixedEmbeddingModel implements EmbeddingModel {
    * The request goes out with no options of its own, so Ollama's embedding model uses the ones
    * configured in {@code application.properties}. Passing Spring AI's generic options here, as
    * {@link EmbeddingModel#embed(String)} does, would quietly replace them: the Ollama model keeps
-   * only the model name from generic options, and {@code truncate=false} is lost.
+   * only the model name and dimensions from generic options, and {@code truncate=false} is lost.
    */
   private static EmbeddingRequest prefixed(String prefix, List<String> texts) {
     return new EmbeddingRequest(texts.stream().map(t -> prefix + t).toList(), null);
