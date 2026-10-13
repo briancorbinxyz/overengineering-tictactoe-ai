@@ -165,25 +165,37 @@ public final class SpecCorpus {
     return parts.length > 1 ? parts[1] : "";
   }
 
-  /** The commit the checkout is at, read from {@code .git} so no git client is needed. */
+  /**
+   * The commit the checkout is at, read from {@code .git} so no git client is needed. Works for a
+   * clone and for a {@code git worktree}, where {@code .git} is a file pointing at the real one.
+   */
   static String commitOf(Path checkout) {
     try {
       Path git = checkout.resolve(".git");
+      if (Files.isRegularFile(git)) {
+        // A worktree: ".git" holds "gitdir: <path>", and branch refs live in the main repository.
+        String pointer = Files.readString(git).strip();
+        git = checkout.resolve(pointer.substring("gitdir:".length()).strip()).normalize();
+      }
       String head = Files.readString(git.resolve("HEAD")).strip();
       if (!head.startsWith("ref: ")) {
         return head; // a tag checkout is detached: HEAD is the commit itself
       }
       String ref = head.substring(5);
-      Path loose = git.resolve(ref);
+      Path common = git;
+      if (Files.exists(git.resolve("commondir"))) {
+        common = git.resolve(Files.readString(git.resolve("commondir")).strip()).normalize();
+      }
+      Path loose = common.resolve(ref);
       if (Files.exists(loose)) {
         return Files.readString(loose).strip();
       }
-      for (String line : Files.readAllLines(git.resolve("packed-refs"))) {
+      for (String line : Files.readAllLines(common.resolve("packed-refs"))) {
         if (line.endsWith(" " + ref)) {
           return line.substring(0, line.indexOf(' '));
         }
       }
-      throw new IllegalStateException("Cannot resolve " + ref + " in " + git);
+      throw new IllegalStateException("Cannot resolve " + ref + " in " + common);
     } catch (IOException e) {
       throw new UncheckedIOException("Not a git checkout: " + checkout, e);
     }

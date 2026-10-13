@@ -27,6 +27,15 @@ class SpecCorpusTest {
   }
 
   @Test
+  void aWorktreeIsFollowedToItsGitDirectory(@TempDir Path dir) throws Exception {
+    Path wt = Files.createDirectories(dir.resolve("main/.git/worktrees/pre28"));
+    Files.writeString(wt.resolve("HEAD"), "c64d41c2e5d0d42c4fefd1b506cb083b9812bf6c\n");
+    Path checkout = Files.createDirectories(dir.resolve("spectastic"));
+    Files.writeString(checkout.resolve(".git"), "gitdir: " + wt + "\n");
+    assertEquals("c64d41c2e5d0d42c4fefd1b506cb083b9812bf6c", SpecCorpus.commitOf(checkout));
+  }
+
+  @Test
   void theSpecIsTheFolderUnderSpecs() {
     assertEquals("059-corpus-retrieval-scale", SpecCorpus.specOf("specs/059-corpus-retrieval-scale/spec.html"));
     assertEquals(
