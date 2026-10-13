@@ -58,6 +58,12 @@ class QuoteResolverTest {
   }
 
   @Test
+  void anInventedQuotationOutweighsAShortOneWhateverTheOrder() {
+    var claim = new Claim("x", List.of("MUST NOT", "words that appear in no chunk whatsoever"));
+    assertEquals(Status.CONTRADICTED, resolver.check(claim, retrieved).status());
+  }
+
+  @Test
   void aClaimWithNoQuotationIsUnchecked() {
     assertEquals(Status.UNCHECKED, resolver.check(new Claim("Nothing here answers it.", List.of()), retrieved).status());
   }

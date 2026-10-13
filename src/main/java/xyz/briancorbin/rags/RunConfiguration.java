@@ -123,7 +123,7 @@ class RunConfiguration {
               HttpResponse.BodyHandlers.ofString());
       JsonNode tags = JsonMapper.shared().readTree(response.body());
       for (JsonNode model : tags.path("models")) {
-        out.put(model.path("name").asString(), model.path("digest").asString());
+        out.put(model.path("name").asString(""), model.path("digest").asString(""));
       }
     } catch (IOException | RuntimeException e) {
       log.warn("Could not read model digests from Ollama: {}", e.getMessage());

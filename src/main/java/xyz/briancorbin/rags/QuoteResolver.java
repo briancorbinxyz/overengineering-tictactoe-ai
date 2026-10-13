@@ -47,20 +47,25 @@ public final class QuoteResolver implements FactChecker<List<Document>> {
       return new Verdict(claim, Status.UNCHECKED, "no quotation");
     }
     var found = new ArrayList<Address>();
+    String tooShort = null;
     for (String source : claim.sources()) {
       String quote = normalise(source);
-      if (quote.split(" ").length < MIN_WORDS) {
-        return new Verdict(
-            claim, Status.UNSUPPORTED, "quotation too short to trace: \"%s\"".formatted(quote));
-      }
       Optional<Integer> at = locate(quote, retrieved);
       if (at.isEmpty()) {
+        // An invented quotation outweighs everything else in the claim.
         return new Verdict(
             claim,
             Status.CONTRADICTED,
             "not word for word in anything retrieved: \"%s\"".formatted(preview(quote)));
       }
+      if (quote.split(" ").length < MIN_WORDS) {
+        tooShort = quote;
+      }
       found.add(Address.of(retrieved.get(at.get())));
+    }
+    if (tooShort != null) {
+      return new Verdict(
+          claim, Status.UNSUPPORTED, "quotation too short to trace: \"%s\"".formatted(tooShort));
     }
     return new Verdict(claim, Status.SUPPORTED, "quoted from " + found.getFirst());
   }

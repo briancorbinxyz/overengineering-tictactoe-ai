@@ -35,6 +35,12 @@ public final class SpecCorpus {
   private static final Logger log = LoggerFactory.getLogger(SpecCorpus.class);
 
   /**
+   * Part of the saved store's name. Change it whenever reading, splitting or the embedding
+   * prefixes change, so an old store is rebuilt rather than reused.
+   */
+  static final String FORMAT = "naive-800-v1";
+
+  /**
    * What was loaded, for the results file. If the commit or the embedding model differ between two
    * runs, their numbers are not comparable.
    */
@@ -81,7 +87,10 @@ public final class SpecCorpus {
           commit,
           expectedCommit);
     }
-    String name = "spectastic-%s-%s".formatted(commit.substring(0, 7), embeddingModel.replaceAll("[^A-Za-z0-9.-]", "_"));
+    String name =
+        "spectastic-%s-%s-%s"
+            .formatted(
+                commit.substring(0, 7), embeddingModel.replaceAll("[^A-Za-z0-9.-]", "_"), FORMAT);
     Path storeFile = storeDir.resolve(name + ".json");
     Path manifestFile = storeDir.resolve(name + ".manifest.json");
     if (Files.exists(storeFile) && Files.exists(manifestFile)) {
@@ -111,7 +120,9 @@ public final class SpecCorpus {
       // Extract, transform, load: one file at a time, so progress shows.
       List<Document> pages = read(files.get(i), commit);
       List<Document> pieces = splitter.apply(pages);
-      store.add(pieces);
+      if (!pieces.isEmpty()) { // the store refuses an empty list
+        store.add(pieces);
+      }
       chunks += pieces.size();
       if ((i + 1) % 50 == 0 || i + 1 == files.size()) {
         log.info("Embedded {} of {} files, {} chunks so far", i + 1, files.size(), chunks);

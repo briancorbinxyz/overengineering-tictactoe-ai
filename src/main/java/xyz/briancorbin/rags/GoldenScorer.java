@@ -92,23 +92,28 @@ public final class GoldenScorer {
     if (element.isEmpty() || text.isEmpty()) {
       return Hit.NONE;
     }
-    int e0 = page.text().indexOf(element);
     int c0 = page.text().indexOf(text);
-    if (e0 < 0 || c0 < 0) {
-      // Not a clean slice of the page; fall back to plain containment.
+    if (c0 < 0 || element.length() < 2) {
+      // Not a clean slice of the page (a multi-byte character split by the tokenizer, say).
       if (text.contains(element)) {
         return Hit.FULL;
       }
-      int half = element.length() / 2;
+      int half = Math.max(1, element.length() / 2);
       return text.contains(element.substring(0, half)) || text.contains(element.substring(half))
           ? Hit.PARTIAL
           : Hit.NONE;
     }
-    int overlap = Math.min(e0 + element.length(), c0 + text.length()) - Math.max(e0, c0);
-    if (overlap >= element.length()) {
+    // The element's text can occur more than once on a page (in a summary table, say); judge the
+    // chunk by the occurrence it overlaps most.
+    int best = 0;
+    for (int e0 = page.text().indexOf(element); e0 >= 0; e0 = page.text().indexOf(element, e0 + 1)) {
+      int overlap = Math.min(e0 + element.length(), c0 + text.length()) - Math.max(e0, c0);
+      best = Math.max(best, overlap);
+    }
+    if (best >= element.length()) {
       return Hit.FULL;
     }
-    return overlap * 2 >= element.length() ? Hit.PARTIAL : Hit.NONE;
+    return best * 2 >= element.length() ? Hit.PARTIAL : Hit.NONE;
   }
 
   /** The text of the element an address names, or the whole page for an address with no {@code #}. */

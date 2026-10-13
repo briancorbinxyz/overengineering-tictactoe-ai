@@ -41,26 +41,26 @@ public final class PrefixedEmbeddingModel implements EmbeddingModel {
   /** A question being searched for. */
   @Override
   public EmbeddingResponse call(EmbeddingRequest request) {
-    return delegate.call(prefixed(QUERY, request.getInstructions(), request.getOptions()));
+    return delegate.call(prefixed(QUERY, request.getInstructions()));
   }
 
   /** A chunk being stored. */
   @Override
   public float[] embed(Document document) {
     var response =
-        delegate.call(prefixed(DOCUMENT, List.of(text(document)), EmbeddingOptions.builder().build()));
+        delegate.call(prefixed(DOCUMENT, List.of(text(document))));
     recordTokens(response);
     return response.getResult().getOutput();
   }
 
-  /** Chunks being stored in batches, for vector stores that batch. */
+  /** Chunks being stored in batches, for vector stores that batch. The options are not passed on. */
   @Override
   public List<float[]> embed(
       List<Document> documents, EmbeddingOptions options, BatchingStrategy batchingStrategy) {
     var out = new ArrayList<float[]>(documents.size());
     for (List<Document> batch : batchingStrategy.batch(documents)) {
       var texts = batch.stream().map(PrefixedEmbeddingModel::text).toList();
-      delegate.call(prefixed(DOCUMENT, texts, options)).getResults().forEach(r -> out.add(r.getOutput()));
+      delegate.call(prefixed(DOCUMENT, texts)).getResults().forEach(r -> out.add(r.getOutput()));
     }
     return out;
   }
@@ -86,8 +86,14 @@ public final class PrefixedEmbeddingModel implements EmbeddingModel {
     }
   }
 
-  private static EmbeddingRequest prefixed(String prefix, List<String> texts, EmbeddingOptions options) {
-    return new EmbeddingRequest(texts.stream().map(t -> prefix + t).toList(), options);
+  /**
+   * The request goes out with no options of its own, so Ollama's embedding model uses the ones
+   * configured in {@code application.properties}. Passing Spring AI's generic options here, as
+   * {@link EmbeddingModel#embed(String)} does, would quietly replace them: the Ollama model keeps
+   * only the model name from generic options, and {@code truncate=false} is lost.
+   */
+  private static EmbeddingRequest prefixed(String prefix, List<String> texts) {
+    return new EmbeddingRequest(texts.stream().map(t -> prefix + t).toList(), null);
   }
 
   private static String text(Document document) {

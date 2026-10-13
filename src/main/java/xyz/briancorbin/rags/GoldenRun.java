@@ -46,7 +46,7 @@ public final class GoldenRun {
 
   /** Words that mark an answer as knowing its source is out of date. A heuristic, said so. */
   private static final Pattern FLAGS_STALE =
-      Pattern.compile("(?i)\\b(withdrawn|superseded|no longer|replaced|retired|archived|was proposed)\\b");
+      Pattern.compile("(?i)\\b(withdrawn|superseded|no longer|retired|archived|was proposed)\\b");
 
   /** What the run was measured on. */
   public record Setup(
@@ -110,10 +110,14 @@ public final class GoldenRun {
         ruling.mode() == Archive.Mode.DUO
             ? ruling.alpha().map(a -> citations.cited(a, ruling.quotes())).orElse(List.of())
             : ruling.quotes();
+    // Stale only if a quotation Alpha relied on comes from the stale element itself, not merely
+    // from a chunk that also happens to hold it.
+    List<String> staleTexts =
+        q.stale().stream().map(a -> scorer.elementText(a).map(QuoteResolver::normalise).orElse("")).toList();
     boolean staleCited =
         cited.stream()
-            .map(quote -> ruling.retrieved().get(quote.rank() - 1))
-            .anyMatch(d -> q.stale().stream().anyMatch(a -> scorer.hit(a, d) != Hit.NONE));
+            .map(quote -> QuoteResolver.normalise(quote.text()))
+            .anyMatch(t -> staleTexts.stream().anyMatch(st -> !st.isEmpty() && st.contains(t)));
     boolean staleFlagged =
         ruling.alpha().map(a -> FLAGS_STALE.matcher(a.answer()).find()).orElse(false);
     return new Row(
