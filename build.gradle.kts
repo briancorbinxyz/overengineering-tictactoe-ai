@@ -4,9 +4,9 @@ plugins {
     id("io.spring.dependency-management") version "1.1.7"
 }
 
-group = "org.xxdc.oss.example"
-version = "0.2.0-SNAPSHOT"
-description = "Over-Engineering Tic-Tac-Toe w. Spring AI"
+group = "xyz.briancorbin"
+version = "0.3.0-SNAPSHOT"
+description = "RAGs to Riches with Spring AI"
 
 java {
     toolchain {
@@ -18,13 +18,17 @@ repositories {
     mavenCentral()
 }
 
-// Episode 1 ran on Spring Boot 3.5 and Spring AI 1.0. Spring AI 2.0 needs Boot 4.
 extra["springAiVersion"] = "2.0.1"
 
 dependencies {
-    implementation("org.xxdc.oss.example:tictactoe-api:3.0.0-jdk25")
+    // Episode 3 leaves tic-tac-toe behind: no tictactoe-api.
     implementation("org.springframework.boot:spring-boot-starter")
     implementation("org.springframework.ai:spring-ai-starter-model-ollama")
+    // Extract: read HTML into Documents.
+    implementation("org.springframework.ai:spring-ai-jsoup-document-reader")
+    // Load and retrieve: SimpleVectorStore, and the advisor that searches it on every call.
+    implementation("org.springframework.ai:spring-ai-vector-store")
+    implementation("org.springframework.ai:spring-ai-vector-store-advisor")
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
@@ -37,4 +41,9 @@ dependencyManagement {
 
 tasks.withType<Test> {
     useJUnitPlatform()
+}
+
+// Lets `--args='--archive.run=ask'` read follow-up questions from the terminal.
+tasks.named<org.springframework.boot.gradle.tasks.run.BootRun>("bootRun") {
+    standardInput = System.`in`
 }

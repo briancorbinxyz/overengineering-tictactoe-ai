@@ -1,1 +1,1 @@
-rootProject.name = "overengineering-tictactoe-ai"
+rootProject.name = "rags-spring-ai"
