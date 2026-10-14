@@ -6,7 +6,7 @@ publish: false
 
 A schema for any knowledge base that wants the properties this series is establishing, one episode at a time. It is a by-product of the series, not an article. Each episode either confirms a part of it with measurements or changes it. The series' own SQLite index is the reference implementation, so the schema can't drift from what was measured.
 
-The SQL is in `schema.sql` beside this note and in the repository under `docs/kb-schema/`. It runs as written on SQLite 3.45. I checked it with a small bitemporal example: one success criterion with four versions, where now, as of 15 August and as known on 15 August each return a different, correct version.
+The SQL is in `schema.sql` (core) and `extensions.sql` (optional) beside this note, and in the repository under `docs/kb-schema/`. Both run as written on SQLite 3.45. I checked them with two small examples. The first is a bitemporal one: one success criterion with four versions, where now, as of 15 August and as known on 15 August each return a different, correct version. The second is a trust one: a signed 10-K and a vendor blog, where only the 10-K reaches the official-only view, an unlabeled document gets the cautious defaults, and an invalid reliability value is rejected.
 
 ## The principles it encodes
 
@@ -24,6 +24,11 @@ The SQL is in `schema.sql` beside this note and in the repository under `docs/kb
 | 10 | **Measure inside the system**: the golden set, runs and labels live next to the data, so the ratchet is a query | `question`, `expected`, `run`, `result` | Episodes 3 onward |
 | 11 | **Swap models without migrating**: embeddings keyed by model and digest | `embedding (version_id, model)` | Episode 4 embedder swap |
 | 12 | **Reproduce any past answer**: replay with the same snapshot and AS_KNOWN at the time it was asked | `answer.asked_at`, `answer.mode`, knowledge time | Time episode |
+| 13 | **Trust is six facts, not one score**: who may see it, how bad a leak is, who stands behind it and how dependable they are, whether it binds anyone, whether it is the publisher's own text, and whether an outsider could have written it | `document.access`, `sensitivity`, `publisher`, `reliability`, `force`, `authenticity`, `trust_zone` | Trust research (v1) |
+| 14 | **Each trust fact has one job.** Access is a hard pre-filter. Reliability is a soft rerank bonus, starting at weight 0 and kept only if the ratchet passes; it is also the only label shown to the model, in at most three tiers. Force and authenticity filter only when a policy demands official sources. External text is datamarked | `official_version` view, `answer.policy`, `answer_context.marked` | To measure: a trust epilogue or the Episode 7 judges |
+| 15 | **Set trust from how a document arrived, never from its text**, and keep the defaults cautious (private, internal sensitivity, external zone, reliability unknown). An attacker controls what a document says, not the ingestion path it came through | adapter rules, recorded in `ingest_run.config_hash` | Trust research (v1) |
+| 16 | **Know who wrote every text and which run stored it.** Model and agent writes are marked, and agents write only drafts | `ingest_run`, `version.author_kind`, `version.author` | Trust research (v1) |
+| 17 | **An answer inherits the sensitivity of everything in its context**, not just what it cites, and the full context is logged | `answer.sensitivity`, `answer_context` | Trust research (v1) |
 
 ## The tables, in plain words
 
@@ -32,6 +37,7 @@ The SQL is in `schema.sql` beside this note and in the repository under `docs/kb
 - **How to find it.** `version_fts` holds keywords with weighted fields. `embedding` holds one vector per version per model.
 - **How it connects.** `link` records typed links, each with how it was derived.
 - **What was said.** `answer` and `quotation`: every quotation points at an exact version.
+- **How far to trust it.** Six columns on `document`, set by the adapter. `ingest_run` records which adapter and configuration wrote each version.
 - **How we know it works.** `question`, `expected`, `run` and `result`: the golden set, with core answers, held-out flags and per-run labels. The ratchet becomes a comparison of two runs.
 
 ## Retrieval modes
@@ -70,6 +76,16 @@ A schema fitted to one corpus is just that corpus's schema. The proof is a secon
 
 If the vault fits without new columns, the schema is generic. If it needs one, that's the change to make, and the place it comes from is worth a paragraph. The same test would apply to the RMS research documents later.
 
+## Optional extensions (`extensions.sql`)
+
+Adopt each one only when an episode or a deployment measures the need:
+- **Trust administration:** `access_grant` (who holds each access value) and `assessment` (who rated each trust fact, how and why, for dated, attributed opinions such as an outlet rating).
+- **Detail:** `facet`, for domain detail that stays out of core, such as SEC filed vs furnished, audited vs unaudited, or a TLP color.
+- **Retrieval aids:** `derived` (summaries, contextual headers, translations; never a quotation target) and `version_dup` (near-duplicate clusters, collapsed before the top k, because a repeated low-trust claim beats an official one in every model tested).
+- **Meaning:** `entity`, `mention`, `claim` and `evidence`, with corroboration computed as distinct primary sources rather than stored.
+- **Feedback,** used to propose golden-set candidates, not to boost ranking.
+- **Governance pack:** data subjects, retention classes, legal holds, and erasure as a tombstone (body emptied, hash and audit kept).
+
 ## Open questions
 
 - **Chunk parts of very long units.** `part` handles splitting, but quotations may span parts. Option: match against the joined unit text.
@@ -80,3 +96,4 @@ If the vault fits without new columns, the schema is generic. If it needs one, t
 ## Changelog
 
 - 14 Oct 2026: v0, from Episodes 3–5 planning, the graph-order research and the bitemporal research.
+- 14 Oct 2026: v1. Six trust facts on `document`, ingestion runs, authorship, language, format and locator, identifier scheme, the answer's full context and sensitivity, trust and attack strata in evaluation, and the `official_version` view. Extensions split into `extensions.sql`. From the source-trust research.

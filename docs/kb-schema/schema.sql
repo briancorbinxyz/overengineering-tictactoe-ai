@@ -1,4 +1,4 @@
--- Knowledge base schema, v0 (living). One SQLite file per knowledge base.
+-- Knowledge base schema, v1 (living). Core only; optional extensions are in extensions.sql. One SQLite file per knowledge base.
 -- Each table says which theme it serves and which episode proves it.
 PRAGMA foreign_keys = ON;
 
@@ -13,16 +13,45 @@ CREATE TABLE source (
   UNIQUE (name, snapshot)
 );
 
+-- Every ingestion run, so "the source changed" is distinguishable from "our parser changed".
+CREATE TABLE ingest_run (
+  ingest_run_id    INTEGER PRIMARY KEY,
+  source_id        INTEGER NOT NULL REFERENCES source,
+  adapter_version  TEXT NOT NULL,            -- 'spectastic-html@1.4.0'
+  splitter_version TEXT NOT NULL,            -- unit rules; a change here changes unit identity
+  config_hash      TEXT NOT NULL,            -- trust rules, PII rules, model ids, prompts
+  started_at       TEXT NOT NULL,
+  finished_at      TEXT,
+  status           TEXT NOT NULL DEFAULT 'running'
+                   CHECK (status IN ('running','ok','failed','superseded'))
+);
+
 -- A document is one addressable file or page.
 CREATE TABLE document (
   document_id   INTEGER PRIMARY KEY,
   source_id     INTEGER NOT NULL REFERENCES source,
   path          TEXT NOT NULL,             -- 'specs/040-run-budget/spec.html'
   title         TEXT,
+  uri           TEXT,                      -- where it was fetched from
   scope         TEXT,                      -- grouping: spec id, folder, client...
-  access        TEXT NOT NULL DEFAULT 'public',  -- hard boundary: filter first, always
+  -- Six trust facts, each with one job. Set by the adapter from how the document
+  -- arrived, never from its text. Defaults are cautious.
+  access        TEXT NOT NULL DEFAULT 'private',      -- who may see it: hard pre-filter, fails closed
+  sensitivity   INTEGER NOT NULL DEFAULT 1            -- how bad a leak is: 0 public .. 3 restricted
+                CHECK (sensitivity BETWEEN 0 AND 3),
+  publisher     TEXT,                                 -- who stands behind it
+  reliability   TEXT                                  -- how dependable the publisher is; NULL = can't judge
+                CHECK (reliability IN ('authoritative','reliable','unvetted','doubtful')),
+                                                      -- soft rerank bonus (weight starts at 0) and the only prompt label
+  force         TEXT NOT NULL DEFAULT 'none'          -- does it bind anyone?
+                CHECK (force IN ('binding','official','guidance','none')),
+  authenticity  TEXT NOT NULL DEFAULT 'unknown'       -- is this the text the publisher issued?
+                CHECK (authenticity IN ('signed','original','copy','derived','unknown')),
+  trust_zone    TEXT NOT NULL DEFAULT 'external'      -- could an outsider have written it? external text is datamarked
+                CHECK (trust_zone IN ('curated','internal','external')),
   UNIQUE (source_id, path)
 );
+CREATE INDEX document_gate ON document (access, sensitivity, force, authenticity);
 
 -- ── What is known: units, with identity separate from their versions ──────
 -- A unit is the smallest thing worth citing: a requirement, decision, section,
@@ -38,12 +67,16 @@ CREATE TABLE unit (
                                            -- normative: states what is true/required;
                                            -- record: says what happened (proposal, log, changelog)
   heading_path  TEXT,                      -- 'Run budget > Requirements > FR-001'
+  format        TEXT NOT NULL DEFAULT 'prose'
+                CHECK (format IN ('prose','table','figure','code','math','list')),
+  locator       TEXT,                      -- JSON: page, bbox, rows, cols, lines
   UNIQUE (document_id, anchor, part)
 );
 
 -- Identifiers a reader would type, scoped. Exact lookup, no full-text. (Episode 4)
 CREATE TABLE identifier (
   value         TEXT NOT NULL COLLATE NOCASE,  -- 'FR-001', 'D-002', 'KB-017', ticker, ISBN
+  scheme        TEXT,                          -- 'spec', 'LEI', 'FIGI', 'ISIN', 'QID'...
   scope         TEXT,                          -- '040' (spec), NULL if global
   unit_id       INTEGER NOT NULL REFERENCES unit,
   PRIMARY KEY (value, scope, unit_id)
@@ -66,7 +99,12 @@ CREATE TABLE version (
   valid_grade   TEXT NOT NULL DEFAULT 'page',  -- 'element','change','page','none': how the date was derived
   recorded_from TEXT NOT NULL,             -- commit time it first appeared
   recorded_to   TEXT,                      -- NULL = still recorded this way
-  commit_ref    TEXT                       -- the commit that recorded it
+  commit_ref    TEXT,                      -- the commit that recorded it
+  ingest_run_id INTEGER REFERENCES ingest_run,
+  author_kind   TEXT NOT NULL DEFAULT 'human'      -- AI-written text is marked as such
+                CHECK (author_kind IN ('human','tool','model','agent')),
+  author        TEXT,                      -- person, agent id, or model@digest
+  lang          TEXT                       -- BCP-47; picks the tokenizer
 );
 CREATE INDEX version_unit ON version (unit_id, valid_from, recorded_from);
 -- The hot path: what is true now, as known now.
@@ -114,6 +152,12 @@ WHERE v.recorded_to IS NULL
   AND (   (u.statement = 'normative' AND v.valid_to IS NULL
            AND v.lifecycle IN ('current','draft'))
        OR (u.statement = 'record'    AND v.lifecycle IN ('current','applied')));
+-- OFFICIAL: current, binding or official, and the publisher's own text. For policies
+-- that allow only official sources; otherwise official is just a rerank feature.
+CREATE VIEW official_version AS
+SELECT v.* FROM current_version v
+JOIN unit u USING (unit_id) JOIN document d USING (document_id)
+WHERE d.force IN ('binding','official') AND d.authenticity IN ('signed','original');
 -- HISTORY, AS_OF(:t), CHANGE and AS_KNOWN(:t) are parameterised queries in the
 -- retriever (see the notes), because SQLite views take no parameters.
 
@@ -125,8 +169,18 @@ CREATE TABLE answer (
   mode          TEXT NOT NULL DEFAULT 'CURRENT',  -- CURRENT, HISTORY, AS_OF, CHANGE, AS_KNOWN
   as_of         TEXT,
   model         TEXT NOT NULL,
+  principal     TEXT,                      -- who asked; 'agent:x for user:y' when delegated
+  policy        TEXT,                      -- JSON: filters, official-only, weights
+  sensitivity   INTEGER NOT NULL DEFAULT 0,-- max over everything in its context, not just what it cites
   text          TEXT
 );
+CREATE TABLE answer_context (              -- every version placed in the model's context
+  answer_id     INTEGER NOT NULL REFERENCES answer,
+  version_id    INTEGER NOT NULL REFERENCES version,
+  rank          INTEGER NOT NULL,
+  marked        INTEGER NOT NULL DEFAULT 0,-- 1 = datamarked as untrusted
+  PRIMARY KEY (answer_id, version_id)
+) WITHOUT ROWID;
 CREATE TABLE quotation (                   -- a claim's evidence, traced to an exact version
   answer_id     INTEGER NOT NULL REFERENCES answer,
   label         TEXT NOT NULL,             -- 'Q1'
@@ -152,13 +206,15 @@ CREATE TABLE expected (                    -- by unit, and by version where the 
   question_id   TEXT NOT NULL REFERENCES question,
   unit_id       INTEGER NOT NULL REFERENCES unit,
   version_id    INTEGER REFERENCES version,
-  role          TEXT NOT NULL DEFAULT 'answer' CHECK (role IN ('answer','stale','decoy'))
+  role          TEXT NOT NULL DEFAULT 'answer'
+                CHECK (role IN ('answer','stale','decoy','conflict','poison','inject'))
 );
 CREATE TABLE run (                         -- one evaluation run; the ratchet compares runs
   run_id        INTEGER PRIMARY KEY,
   episode       TEXT NOT NULL,
   config_hash   TEXT NOT NULL,             -- prompts, models, retrieval settings
   source_id     INTEGER NOT NULL REFERENCES source,
+  ingest_run_id INTEGER REFERENCES ingest_run,
   started_at    TEXT NOT NULL
 );
 CREATE TABLE result (
@@ -167,6 +223,9 @@ CREATE TABLE result (
   first_hit     INTEGER,                   -- rank of the first expected unit, NULL = miss
   all_evidence  INTEGER,                   -- rank by which every expected unit was retrieved
   stale_in_top  INTEGER NOT NULL DEFAULT 0,
+  poison_in_top INTEGER,                   -- planted false units in the top k
+  followed_injection INTEGER,              -- 1 = a planted instruction was acted on
+  leaked        INTEGER,                   -- 1 = the answer used something the asker may not see
   answer_id     INTEGER REFERENCES answer,
   label         TEXT,                      -- correct, partly, wrong, abstained...
   labelled_by   TEXT,
