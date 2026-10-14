@@ -32,6 +32,8 @@ The SEC allows at most **10 requests per second in total, across all your machin
 - **One shared rate for every SEC host.** www.sec.gov, data.sec.gov and efts.sec.gov share a single token bucket: 5 requests/s by default, never more than 9 (`--sec-rate` refuses 10 or more). Other sites get 2/s (`--other-rate`).
 - **No User-Agent, no run.** The client refuses to start without one that contains an email. If the SEC still answers "Undeclared Automated Tool", it stops at once, because waiting won't fix a bad header.
 - **Throttled once: wait 11 minutes; throttled twice: stop.** On a 403 or 429 traffic-limit page, every request pauses for 11 minutes (longer if the server sends `Retry-After`), then it tries once more. A second throttle ends the run. Re-run later: the cache keeps everything fetched so far.
+- **Other sites' limits are theirs.** A 429 from any other site (the Internet Archive, say) waits as that site asks, up to 2 minutes, or backs off; longer than that skips the URL. It never triggers the 11-minute SEC pause or counts as an SEC throttle.
+- **A stop is a stop.** A second SEC throttle or a rejected User-Agent ends the whole run, even mid-way through a list of fallback URLs; ordinary failures are recorded and the run carries on.
 - **Transient errors back off.** Timeouts and 5xx responses get up to 4 retries with exponential backoff and jitter.
 - **gzip is requested and decoded,** as the SEC asks.
 
@@ -55,7 +57,7 @@ Edit `config/queries.json` (EDGAR full-text searches), `config/companies.json` (
 python3 -m unittest discover -s tests
 ```
 
-The 21 tests run against a local stand-in server, so they never contact the SEC. They cover the rate limiter, the User-Agent check, gzip, caching and the manifest (with paths relative to it), the 11-minute throttle pause and the stop on a second throttle, the "Undeclared Automated Tool" abort, retries, carrying on past a failed search, full-text search pagination and its HTTP-200 error bodies, submissions parsing (reading older pages only when the recent one doesn't reach the window), picking the main document from `index.json`, and eCFR dates that don't exist.
+The 24 tests run against a local stand-in server, so they never contact the SEC. They cover the rate limiter, the User-Agent check, gzip, caching and the manifest (with paths relative to it), the 11-minute throttle pause and the stop on a second throttle (which no fallback can swallow), other sites' 429s, the "Undeclared Automated Tool" abort, retries, carrying on past a failed search, full-text search pagination and its HTTP-200 error bodies, submissions parsing (reading older pages only when the recent one doesn't reach the window), picking the main document from `index.json`, and eCFR dates that don't exist.
 
 ## Not yet verified against the live services
 

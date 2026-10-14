@@ -40,18 +40,24 @@ from typing import Callable, Dict, Optional
 SEC_HOSTS = ("www.sec.gov", "sec.gov", "data.sec.gov", "efts.sec.gov")
 SEC_MAX_RATE = 9.0          # hard ceiling we allow ourselves; the SEC limit is 10
 THROTTLE_PAUSE_S = 11 * 60  # the SEC's timeout is 10 minutes; wait a little longer
+OTHER_RETRY_AFTER_MAX_S = 120  # other sites: honour Retry-After up to this, else give up on the URL
 EMAIL = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
 
 
 class FetchError(RuntimeError):
-    pass
+    """One request failed. The run records it and carries on."""
 
 
-class IdentityRejected(FetchError):
+class StopRun(RuntimeError):
+    """Carrying on would make things worse with the SEC. Deliberately not a FetchError,
+    so the per-item handlers that record a failure and continue never swallow it."""
+
+
+class IdentityRejected(StopRun):
     """The SEC rejected the User-Agent. Fix it; waiting will not help."""
 
 
-class Throttled(FetchError):
+class Throttled(StopRun):
     """The SEC throttled us twice. Stop and come back later."""
 
 
@@ -231,8 +237,21 @@ class PoliteClient:
                         raise IdentityRejected(
                             f"SEC rejected the User-Agent for {url}. Use your real name and "
                             "email, e.g. 'Jane Doe jane@example.com'.") from None
-                    if sec or e.code == 429:
+                    if sec:
                         self._on_throttle(url, e.code, e.headers, bucket)
+                        continue
+                    if e.code == 429 and attempt < self.max_attempts:
+                        # Another site's limit: it says nothing about the SEC, so no
+                        # 11-minute pause and no strike against the SEC's two-throttle rule.
+                        wait = _retry_after(e.headers)
+                        if wait > OTHER_RETRY_AFTER_MAX_S:
+                            raise FetchError(f"HTTP 429 for {url}: asked to wait {wait}s; "
+                                             "skipped, try again later") from None
+                        if wait:
+                            self.log(f"   429 from {url}; waiting {wait}s as asked")
+                            self.sleep(wait)
+                        else:
+                            self._backoff(attempt, f"HTTP 429 for {url}")
                         continue
                 if e.code == 404:
                     raise FetchError(f"404 Not Found: {url}") from None
@@ -252,13 +271,8 @@ class PoliteClient:
                 f"Throttled again (HTTP {code}) on {url}. Stopping. Wait at least 10 minutes, "
                 "lower --sec-rate, and re-run: everything fetched so far is cached.")
         self.throttled_once = True
-        retry_after = 0
-        try:
-            retry_after = int(headers.get("Retry-After", "0")) if headers else 0
-        except ValueError:
-            retry_after = 0
-        pause = max(THROTTLE_PAUSE_S, retry_after)
-        self.log(f"!! Throttled (HTTP {code}) on {url}. Pausing ALL requests for "
+        pause = max(THROTTLE_PAUSE_S, _retry_after(headers))
+        self.log(f"!! Throttled (HTTP {code}) on {url}. Pausing all SEC requests for "
                  f"{pause // 60} min, as the SEC asks, then trying once more.")
         bucket.pause(pause)
 
@@ -266,3 +280,11 @@ class PoliteClient:
         delay = min(60.0, 2 ** (attempt - 1)) * (0.5 + random.random() / 2)
         self.log(f"   retry {attempt}/{self.max_attempts - 1} in {delay:.1f}s ({why})")
         self.sleep(delay)
+
+
+def _retry_after(headers) -> int:
+    """Retry-After in seconds (the seconds form only; an HTTP date counts as 0)."""
+    try:
+        return max(0, int(headers.get("Retry-After", "0"))) if headers else 0
+    except ValueError:
+        return 0

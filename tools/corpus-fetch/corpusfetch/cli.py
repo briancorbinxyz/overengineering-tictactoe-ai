@@ -18,7 +18,7 @@ import sys
 from pathlib import Path
 
 from . import edgar, regs
-from .polite import FetchError, IdentityRejected, PoliteClient, Throttled
+from .polite import FetchError, PoliteClient, StopRun
 
 HERE = Path(__file__).resolve().parent.parent
 CONFIG = HERE / "config"
@@ -163,7 +163,7 @@ def main(argv=None) -> int:
             run_filings(client, args.out)
         if args.command in ("regs", "all"):
             run_regs(client, args.out)
-    except (IdentityRejected, Throttled) as e:
+    except StopRun as e:
         print(f"STOPPED: {e}", file=sys.stderr)
         return 2
     print(f"Done. {client.requests_sent} requests sent; manifest: {args.out / 'manifest.jsonl'}")

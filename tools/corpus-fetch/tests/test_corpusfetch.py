@@ -144,6 +144,33 @@ class ClientTest(Base):
         self.assertEqual(r.body, b"ok")
         self.assertTrue(any(s >= 659 for s in self.sleeps), self.sleeps)
 
+    def other_site_client(self):
+        return PoliteClient(UA, self.tmp / "raw2", self.tmp / "manifest2.jsonl",
+                            sleep=self.sleeps.append, log=self.logs.append, sec_hosts=())
+
+    def test_other_site_429_waits_as_asked_without_the_sec_pause(self):
+        client = self.other_site_client()
+        self.route("/archive", (429, b"slow down", {"Retry-After": "3"}), (200, b"pdf", {}))
+        self.assertEqual(client.get(self.base + "/archive").body, b"pdf")
+        self.assertIn(3, self.sleeps)
+        self.assertFalse(any(s >= 600 for s in self.sleeps), self.sleeps)
+        self.assertFalse(client.throttled_once, "another site's 429 is no strike against the SEC")
+
+    def test_other_site_long_retry_after_skips_the_url(self):
+        client = self.other_site_client()
+        self.route("/busy", (429, b"", {"Retry-After": "3600"}))
+        with self.assertRaises(FetchError):
+            client.get(self.base + "/busy")
+        self.assertEqual(self.sleeps, [])
+
+    def test_sec_throttle_is_not_swallowed_by_fallbacks(self):
+        page = b"You've Exceeded the SEC's Traffic Limit"
+        self.route("/a", (429, page, {}), (429, page, {}))
+        src = {"id": "t", "kind": "url", "url": self.base + "/a", "fallbacks": [self.base + "/b"]}
+        with self.assertRaises(Throttled):
+            regs.fetch_source(self.client, src)
+        self.assertNotIn("/b", [p for p, _ in FakeSec.seen], "must stop, not try the next URL")
+
     def test_second_throttle_stops(self):
         page = b"You've Exceeded the SEC's Traffic Limit"
         self.route("/y", (403, page, {}))
