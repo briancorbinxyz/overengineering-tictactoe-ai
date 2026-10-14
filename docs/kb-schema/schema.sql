@@ -1,4 +1,4 @@
--- Knowledge base schema, v1 (living). Core only; optional extensions are in extensions.sql. One SQLite file per knowledge base.
+-- Knowledge base schema, v1.1 (living). Core only; optional extensions are in extensions.sql. One SQLite file per knowledge base.
 -- Each table says which theme it serves and which episode proves it.
 PRAGMA foreign_keys = ON;
 
@@ -145,13 +145,25 @@ CREATE INDEX link_from ON link (from_unit, type);
 CREATE INDEX link_to   ON link (to_unit, type);
 
 -- ── Retrieval modes as views: the default is now, as known now ──────────
--- CURRENT: normative content in effect now, plus records of applied changes.
+-- "Now" is data, not the wall clock: freeze it so answers don't flip when a
+-- future-effective rule (EU T+1 on 2027-10-11) comes into force mid-evaluation.
+CREATE TABLE clock (
+  id            INTEGER PRIMARY KEY CHECK (id = 1),
+  now_valid     TEXT NOT NULL,             -- 'YYYY-MM-DD', the valid-time "today"
+  now_recorded  TEXT NOT NULL              -- UTC timestamp, the knowledge-time "now"
+);
+-- CURRENT: normative content in effect at clock.now_valid, plus records of applied
+-- changes, as known at clock.now_recorded. Both valid-time bounds are checked, so an
+-- adopted-but-not-yet-applicable rule does not count as in effect.
 CREATE VIEW current_version AS
-SELECT v.* FROM version v JOIN unit u USING (unit_id)
-WHERE v.recorded_to IS NULL
-  AND (   (u.statement = 'normative' AND v.valid_to IS NULL
-           AND v.lifecycle IN ('current','draft'))
-       OR (u.statement = 'record'    AND v.lifecycle IN ('current','applied')));
+SELECT v.* FROM version v JOIN unit u USING (unit_id), clock c
+WHERE v.recorded_from <= c.now_recorded
+  AND (v.recorded_to IS NULL OR v.recorded_to > c.now_recorded)
+  AND (   (u.statement = 'normative'
+           AND v.valid_from IS NOT NULL AND v.valid_from <= c.now_valid
+           AND (v.valid_to IS NULL OR v.valid_to > c.now_valid)
+           AND v.lifecycle NOT IN ('withdrawn','rejected','retired'))
+       OR (u.statement = 'record' AND v.lifecycle IN ('current','applied')));
 -- OFFICIAL: current, binding or official, and the publisher's own text. For policies
 -- that allow only official sources; otherwise official is just a rerank feature.
 CREATE VIEW official_version AS

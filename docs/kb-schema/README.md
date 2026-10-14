@@ -50,7 +50,7 @@ The SQL is in `schema.sql` (core) and `extensions.sql` (optional) beside this no
 | CHANGE | Pairs of consecutive versions, with what changed and when | "What changed", "since when" |
 | AS_KNOWN (t) | What the knowledge base said at t | Audit and replaying past answers |
 
-CURRENT is a view. The others are parameterised queries in the retriever, because SQLite views take no parameters. Every mode filters before it ranks: the time test sits in the WHERE clause, so the top results come only from rows that pass it.
+CURRENT is a view that reads "now" from a one-row `clock` table, so evaluation runs freeze time and answers don't flip when a future-effective rule comes into force. The others are parameterised queries in the retriever, because SQLite views take no parameters. Every mode filters before it ranks: the time test sits in the WHERE clause, so the top results come only from rows that pass it.
 
 ## Design choices worth knowing
 
@@ -97,3 +97,4 @@ Adopt each one only when an episode or a deployment measures the need:
 
 - 14 Oct 2026: v0, from Episodes 3–5 planning, the graph-order research and the bitemporal research.
 - 14 Oct 2026: v1. Six trust facts on `document`, ingestion runs, authorship, language, format and locator, identifier scheme, the answer's full context and sensitivity, trust and attack strata in evaluation, and the `official_version` view. Extensions split into `extensions.sql`. From the source-trust research.
+- 14 Oct 2026: v1.1. Bug fix found while designing the finance corpus: CURRENT checked only `valid_to`, so a rule adopted but not yet in force (EU T+1, applicable from 11 Oct 2027) showed as current. CURRENT now checks both valid-time bounds and the knowledge-time bounds against a frozen `clock` row. Checked: EU settlement reads T+2 on 30 Sep 2026 and T+1 on 12 Oct 2027.
