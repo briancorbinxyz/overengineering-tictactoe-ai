@@ -25,7 +25,7 @@ def fetch_source(client: PoliteClient, src: dict) -> List[dict]:
     out: List[dict] = []
 
     def keep(resp, role):
-        out.append({"id": src["id"], "role": role, "url": resp.url, "file": str(resp.path),
+        out.append({"id": src["id"], "role": role, "url": resp.url, "file": resp.file,
                     "sha256": resp.sha256, "bytes": len(resp.body),
                     "redistribute": src.get("redistribute", False)})
 

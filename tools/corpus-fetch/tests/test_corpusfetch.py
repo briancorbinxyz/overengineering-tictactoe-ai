@@ -124,6 +124,18 @@ class ClientTest(Base):
         lines = (self.tmp / "manifest.jsonl").read_text().splitlines()
         self.assertEqual(len(lines), 1)
         self.assertEqual(json.loads(lines[0])["url"], url)
+        self.assertTrue(json.loads(lines[0])["file"].startswith("raw/"),
+                        "manifest paths are relative, so the manifest can be committed")
+
+    def test_relink_makes_old_absolute_paths_relative(self):
+        absolute = str((self.tmp / "raw" / "abc_x.json").resolve())
+        (self.tmp / "manifest.jsonl").write_text(
+            json.dumps({"url": "u", "file": absolute}) + "\n"
+            + json.dumps({"url": "v", "file": "raw/def_y.json"}) + "\n")
+        self.assertEqual(self.client.relink_manifest(), 1)
+        files = [json.loads(l)["file"] for l in
+                 (self.tmp / "manifest.jsonl").read_text().splitlines()]
+        self.assertEqual(files, ["raw/abc_x.json", "raw/def_y.json"])
 
     def test_throttle_pauses_eleven_minutes_then_succeeds(self):
         page = b"<title>You've Exceeded the SEC's Traffic Limit</title>"
@@ -217,6 +229,29 @@ class EdgarTest(Base):
                                  picked[0]["primaryDocument"], "10-K")
         self.assertEqual(rec["document"], "acu-20241231.htm")
         self.assertEqual(rec["bytes"], len(b"<html>10-K</html>"))
+
+    def test_submissions_reads_older_pages_only_when_recent_falls_short(self):
+        recent = {"accessionNumber": ["0000093751-26-000100"], "filingDate": ["2026-02-20"],
+                  "form": ["10-K"], "primaryDocument": ["stt-2025.htm"]}
+        files = [{"name": "CIK0000093751-submissions-001.json",
+                  "filingFrom": "2023-06-01", "filingTo": "2025-11-30"},
+                 {"name": "CIK0000093751-submissions-002.json",
+                  "filingFrom": "2001-01-01", "filingTo": "2023-05-31"}]
+        older = {"accessionNumber": ["0000093751-24-000010"], "filingDate": ["2024-02-16"],
+                 "form": ["10-K"], "primaryDocument": ["stt-2023.htm"]}
+        self.route("/submissions/CIK0000093751.json",
+                   (200, json.dumps({"filings": {"recent": recent, "files": files}}).encode(), {}))
+        self.route("/submissions/CIK0000093751-submissions-001.json",
+                   (200, json.dumps(older).encode(), {}))
+        rows = edgar.submissions(self.client, 93751, start="2024-01-01")
+        picked = edgar.select_filings(rows, ["10-K"], "2024-01-01", "2024-12-31")
+        self.assertEqual([p["primaryDocument"] for p in picked], ["stt-2023.htm"])
+        asked = [path for path, _ in FakeSec.seen]
+        self.assertNotIn("/submissions/CIK0000093751-submissions-002.json", asked,
+                         "a page that ends before the window must not be fetched")
+        FakeSec.seen.clear()
+        edgar.submissions(self.client, 93751, start="2026-01-01")
+        self.assertEqual(len(FakeSec.seen), 0, "recent page reaches back far enough: no more requests")
 
     def test_primary_from_index_prefers_form_name_then_size(self):
         idx = {"directory": {"item": [{"name": "d1-index.htm", "size": ""},

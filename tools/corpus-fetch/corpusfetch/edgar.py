@@ -98,12 +98,22 @@ def efts_search(client: PoliteClient, q: str, forms: Iterable[str] = (),
             break
 
 
-def submissions(client: PoliteClient, cik, include_older: bool = False) -> List[dict]:
-    """All filings for a company as a list of row dicts, newest first."""
+def submissions(client: PoliteClient, cik, include_older: bool = False,
+                start: Optional[str] = None) -> List[dict]:
+    """All filings for a company as a list of row dicts, newest first.
+
+    The first response holds only the most recent 1,000 or so filings. Busy filers (banks
+    issuing notes, say) push a year-old 10-K out of it, so older pages are also read when
+    include_older is set, or when the recent page doesn't reach back to `start` (then only
+    the older pages that cover dates from `start` onwards).
+    """
     first = client.get_json(SUBMISSIONS_URL.format(name=f"CIK{cik10(cik)}.json"))
-    pages = [first.get("filings", {}).get("recent", {})]
-    if include_older:
-        for f in first.get("filings", {}).get("files", []):
+    recent = first.get("filings", {}).get("recent", {})
+    pages = [recent]
+    dates = [d for d in recent.get("filingDate", []) if d]
+    reaches = bool(dates) and min(dates) <= (start or "")
+    for f in first.get("filings", {}).get("files", []):
+        if include_older or (start and not reaches and (f.get("filingTo") or "9999") >= start):
             pages.append(client.get_json(SUBMISSIONS_URL.format(name=f["name"])))
     rows: List[dict] = []
     for cols in pages:
@@ -165,4 +175,4 @@ def fetch_filing(client: PoliteClient, cik, adsh: str, document: Optional[str] =
         doc = doc.rsplit("/", 1)[-1]
     resp = client.get(archive_url(cik, adsh, doc))
     return {"cik": int(str(cik)), "adsh": adsh, "document": doc, "url": resp.url,
-            "file": str(resp.path), "sha256": resp.sha256, "bytes": len(resp.body)}
+            "file": resp.file, "sha256": resp.sha256, "bytes": len(resp.body)}

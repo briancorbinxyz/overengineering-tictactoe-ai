@@ -76,12 +76,19 @@ def run_filings(client, out: Path):
     saved = []
     for c in cfg["by_ticker"]:
         t = c["ticker"].upper()
-        if t not in tickers:
-            print(f"!! ticker {t} not in company_tickers.json; skipped", file=sys.stderr)
+        by_cik = {v["cik"]: dict(v, ticker=k) for k, v in tickers.items()}
+        if c.get("cik"):  # tickers change (BK became BNY); a CIK doesn't
+            cik = int(c["cik"])
+            title = by_cik.get(cik, {}).get("title", t)
+        elif t in tickers:
+            cik, title = tickers[t]["cik"], tickers[t]["title"]
+        else:
+            print(f"!! ticker {t} not in company_tickers.json (renamed? set \"cik\" in "
+                  f"companies.json); skipped", file=sys.stderr)
+            saved.append({"ticker": t, "error": "ticker not in company_tickers.json"})
             continue
-        cik = tickers[t]["cik"]
         try:
-            rows = edgar.submissions(client, cik)
+            rows = edgar.submissions(client, cik, start=c.get("start"))
         except FetchError as err:
             print(f"!! {t}: {err}", file=sys.stderr)
             saved.append({"ticker": t, "error": str(err)})
@@ -99,7 +106,7 @@ def run_filings(client, out: Path):
                 print(f"!! {t} {f['accessionNumber']}: {err}", file=sys.stderr)
                 saved.append({"ticker": t, "adsh": f["accessionNumber"], "error": str(err)})
                 continue
-            rec.update({"ticker": t, "company": tickers[t]["title"], "form": f.get("form"),
+            rec.update({"ticker": t, "company": title, "form": f.get("form"),
                         "filing_date": f.get("filingDate"), "report_date": f.get("reportDate"),
                         "accepted": f.get("acceptanceDateTime"), "why": c.get("why", "")})
             saved.append(rec)
@@ -147,6 +154,9 @@ def main(argv=None) -> int:
     try:
         client = PoliteClient(args.user_agent, args.out / "raw", args.out / "manifest.jsonl",
                               sec_rate=args.sec_rate, other_rate=args.other_rate)
+        fixed = client.relink_manifest()
+        if fixed:
+            print(f"manifest: {fixed} absolute paths made relative")
         if args.command in ("search", "all"):
             run_search(client, args.out)
         if args.command in ("filings", "all"):

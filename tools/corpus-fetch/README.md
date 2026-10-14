@@ -47,7 +47,7 @@ Not legal advice.
 
 ## Change what it fetches
 
-Edit `config/queries.json` (EDGAR full-text searches), `config/companies.json` (by ticker, or exact accession numbers) and `config/sources.json` (regulatory texts). Search syntax follows the [SEC full-text search FAQ](https://www.sec.gov/edgar/search/efts-faq.html): quotes for phrases, capitalised `OR` and `NOT`, coverage from 2001. A page is 100 hits, and the search stops at 10,000 results, so split long date ranges.
+Edit `config/queries.json` (EDGAR full-text searches), `config/companies.json` (by ticker, or exact accession numbers; tickers change, as BK did when it became BNY, so add `"cik"` to pin a company) and `config/sources.json` (regulatory texts). Search syntax follows the [SEC full-text search FAQ](https://www.sec.gov/edgar/search/efts-faq.html): quotes for phrases, capitalised `OR` and `NOT`, coverage from 2001. A page is 100 hits, and the search stops at 10,000 results, so split long date ranges.
 
 ## Tests
 
@@ -55,7 +55,7 @@ Edit `config/queries.json` (EDGAR full-text searches), `config/companies.json` (
 python3 -m unittest discover -s tests
 ```
 
-The 19 tests run against a local stand-in server, so they never contact the SEC. They cover the rate limiter, the User-Agent check, gzip, caching and the manifest, the 11-minute throttle pause and the stop on a second throttle, the "Undeclared Automated Tool" abort, retries, carrying on past a failed search, full-text search pagination and its HTTP-200 error bodies, submissions parsing, picking the main document from `index.json`, and eCFR dates that don't exist.
+The 21 tests run against a local stand-in server, so they never contact the SEC. They cover the rate limiter, the User-Agent check, gzip, caching and the manifest (with paths relative to it), the 11-minute throttle pause and the stop on a second throttle, the "Undeclared Automated Tool" abort, retries, carrying on past a failed search, full-text search pagination and its HTTP-200 error bodies, submissions parsing (reading older pages only when the recent one doesn't reach the window), picking the main document from `index.json`, and eCFR dates that don't exist.
 
 ## Not yet verified against the live services
 

@@ -8,7 +8,7 @@
     {"ticker": "IBKR", "forms": ["10-K"], "start": "2024-01-01", "end": "2025-12-31", "limit": 2, "why": "Broker-dealer: T+1 before and after"},
     {"ticker": "VIRT", "forms": ["10-K"], "start": "2024-01-01", "end": "2025-12-31", "limit": 2, "why": "Market maker: T+1 before and after"},
     {"ticker": "BR",   "forms": ["10-K"], "start": "2023-07-01", "end": "2025-12-31", "limit": 2, "why": "Post-trade technology: June fiscal year"},
-    {"ticker": "BK",   "forms": ["10-K"], "start": "2024-01-01", "end": "2024-12-31", "limit": 1, "why": "Custodian"},
+    {"ticker": "BNY", "cik": 1390777,   "forms": ["10-K"], "start": "2024-01-01", "end": "2024-12-31", "limit": 1, "why": "Custodian"},
     {"ticker": "STT",  "forms": ["10-K"], "start": "2024-01-01", "end": "2024-12-31", "limit": 1, "why": "Custodian"},
     {"ticker": "PLTR", "forms": ["10-K"], "start": "2025-01-01", "limit": 1, "why": "Palantir today, to set against its 2020 S-1"},
     {"ticker": "INFY", "forms": ["20-F"], "start": "2024-01-01", "limit": 1, "why": "Indian issuer: home market T+1 since 2023"},

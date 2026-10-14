@@ -25,6 +25,10 @@
    "why": "Canada NI 24-101 amendments, T+1 on 27 May 2024"},
   {"id": "sebi-t1-2021", "kind": "url", "url": "https://www.sebi.gov.in/legal/circulars/sep-2021/introduction-of-t-1-rolling-settlement-on-an-optional-basis_52462.html", "redistribute": false,
    "why": "India: optional T+1 from 2021"},
-  {"id": "dtcc-t1-playbook-2022", "kind": "url", "url": "https://www.dtcc.com/-/media/Files/PDFs/T2/T1-Industry-Implementation-Playbook.pdf", "redistribute": false,
-   "why": "Industry playbook assuming Q3 2024: superseded by the 28 May 2024 date. Copyrighted: keep local, cite by link"}
+  {"id": "dtcc-t1-playbook-2022", "kind": "url", "url": "https://www.dtcc.com/-/media/Files/PDFs/T2/T1-Industry-Implementation-Playbook.pdf",
+   "fallbacks": ["https://web.archive.org/web/2022id_/https://www.dtcc.com/-/media/Files/PDFs/T2/T1-Industry-Implementation-Playbook.pdf"],
+   "redistribute": false,
+   "why": "Original August 2022 playbook planning for a Q3 2024 (3 Sep 2024) start: superseded by the 28 May 2024 date. Moved off dtcc.com; the fallback is the Internet Archive copy. Copyrighted: keep local, cite by link"},
+  {"id": "sifma-t1-playbook-2024", "kind": "url", "url": "https://www.sifma.org/wp-content/uploads/2024/01/T1-Industry-Implementation-Playbook.pdf", "redistribute": false,
+   "why": "The same playbook as revised for the 28 May 2024 date: pairs with the 2022 version as same-publisher supersession. Copyrighted: keep local, cite by link"}
 ]

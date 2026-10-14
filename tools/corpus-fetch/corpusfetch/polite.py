@@ -22,6 +22,7 @@ from __future__ import annotations
 import gzip
 import hashlib
 import json
+import os
 import random
 import re
 import sys
@@ -90,6 +91,7 @@ class Response:
     path: Path
     sha256: str
     from_cache: bool
+    file: str = ""  # path relative to the manifest's folder, as recorded in the manifest
 
     def json(self):
         return json.loads(self.body.decode("utf-8"))
@@ -154,7 +156,7 @@ class PoliteClient:
             info = json.loads(meta.read_text())
             body = path.read_bytes()
             return Response(url, info["status"], body, info.get("content_type", ""), path,
-                            hashlib.sha256(body).hexdigest(), True)
+                            hashlib.sha256(body).hexdigest(), True, self.relpath(path))
         status, body, ctype = self._fetch(url, accept)
         path.write_bytes(body)
         digest = hashlib.sha256(body).hexdigest()
@@ -162,10 +164,34 @@ class PoliteClient:
         meta.write_text(json.dumps({"url": url, "status": status, "content_type": ctype,
                                     "fetched_at": fetched_at}))
         with self.manifest.open("a", encoding="utf-8") as f:
-            f.write(json.dumps({"url": url, "file": str(path), "sha256": digest,
+            f.write(json.dumps({"url": url, "file": self.relpath(path), "sha256": digest,
                                 "bytes": len(body), "status": status,
                                 "content_type": ctype, "fetched_at": fetched_at}) + "\n")
-        return Response(url, status, body, ctype, path, digest, False)
+        return Response(url, status, body, ctype, path, digest, False, self.relpath(path))
+
+    def relpath(self, path: Path) -> str:
+        """A path relative to the manifest's folder, so the manifest can be committed and moved."""
+        try:
+            return Path(os.path.relpath(Path(path).resolve(), self.manifest.parent.resolve())).as_posix()
+        except ValueError:  # different drive on Windows
+            return Path(path).as_posix()
+
+    def relink_manifest(self) -> int:
+        """Rewrite absolute paths left in the manifest by earlier versions as relative ones."""
+        if not self.manifest.exists():
+            return 0
+        lines, changed = [], 0
+        for line in self.manifest.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            if os.path.isabs(row.get("file", "")):
+                row["file"] = self.relpath(Path(row["file"]))
+                changed += 1
+            lines.append(json.dumps(row))
+        if changed:
+            self.manifest.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        return changed
 
     def get_json(self, url: str, refresh: bool = False):
         return self.get(url, accept="application/json", refresh=refresh).json()
