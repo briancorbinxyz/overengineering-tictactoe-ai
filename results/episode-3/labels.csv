@@ -11,18 +11,18 @@ G-009,single-fact,partly,,"Two findings and the disclaimer; misses the 55/100 am
 G-010,single-fact,wrong,,Talks about the serial loop bottleneck; never says why p-map was not used.,"draft: Claude, to confirm",
 G-011,paraphrase,correct,,CSP default-src blocks a runtime fetch and the no-executable-content rule rules out the alternative. Strict retrieval miss.,"draft: Claude, to confirm",
 G-012,paraphrase,wrong,,"Answers about installed adapters drifting, from 031; nothing about re-imports.","draft: Claude, to confirm",
-G-013,paraphrase,partly,,"Progressive enhancement and readable with JavaScript off, but not the mechanism (the script marks the document reveal-capable).","draft: Claude, to confirm",
+G-013,paraphrase,correct,,"Progressive enhancement and readable with JavaScript off, but not the mechanism (the script marks the document reveal-capable).",Brian,Seemed like a bit of a harsh judgement - perhaps review this.
 G-014,paraphrase,wrong,,"Answers about re-ordering requirements, from 009; the ladder in 059 FR-002 was never retrieved.","draft: Claude, to confirm",
-G-015,paraphrase,correct,,Validation will not stop the commit; misses that it is a warning-severity finding.,"draft: Claude, to confirm",
+G-015,paraphrase,correct,,Validation will not stop the commit; misses that it is a warning-severity finding.,Brian,correct - the question doesn't require the info level to be stated but is improved when it is.
 G-016,paraphrase,wrong,,Talks about failure and aspiration thresholds; misses the justification rule for 0 or 100%.,"draft: Claude, to confirm",
 G-017,paraphrase,correct,,Refuses before any model call or file write. Strict retrieval miss.,"draft: Claude, to confirm",
-G-018,paraphrase,correct,,The meta-spec breached its own validation budget on CI; no figures.,"draft: Claude, to confirm",
+G-018,paraphrase,correct,,The meta-spec breached its own validation budget on CI; no figures.,Brian,"The reference answer, however, is noticeably more quantitative as to the motivation."
 G-019,paraphrase,correct,,Tables had no overflow container; renderVerifyHtml now wraps both in overflow-x:auto. Strict retrieval miss.,"draft: Claude, to confirm",
 G-020,paraphrase,correct,,Static prompt with no input; a textarea added under the teach-back prompt.,"draft: Claude, to confirm",
 G-021,identifier,correct,,"Accumulate estimated spend; normal, degrade at 80%, halt at 100%.","draft: Claude, to confirm",
 G-022,identifier,wrong,,Says NFR-001 requires verification; the requirement is determinism and not breaking existing artifacts.,"draft: Claude, to confirm",
 G-023,identifier,abstained wrongly,,Beta's only claim paraphrased and was dropped; the expected element was not retrieved either.,"draft: Claude, to confirm",
-G-024,identifier,correct,,spectastic.json at the project root; misses the git section and the defaults.,"draft: Claude, to confirm",
+G-024,identifier,correct,,spectastic.json at the project root; misses the git section and the defaults.,Brian,The reference answer arguably provides more detail than the question requires.
 G-025,identifier,wrong,,Describes T-100 generically ('document conversion'); not the failing-test task it is.,"draft: Claude, to confirm",
 G-026,identifier,correct,,A budget is never checked against running text; FR-003 forbids the check.,"draft: Claude, to confirm",
 G-027,identifier,wrong,,Talks about P-3 and FR-012; not what D-001 decides (corpus joins the shared composer).,"draft: Claude, to confirm",
@@ -42,10 +42,10 @@ G-040,stale,wrong,yes,'29-file tree' comes from an older archived proposal; the 
 G-041,stale,wrong,,Answers about conventional locations and token-set disagreement; not path resolution's 1 call and 0 walks.,"draft: Claude, to confirm",
 G-042,stale,wrong,,"Says the drift check compares rendered screens; the current rule compares against the files as they are now, not a digest.","draft: Claude, to confirm",
 G-043,stale,wrong,yes,"Partly from a withdrawn proposal ('the screen resource URI does not include a name'), which contradicts the current FR-013. Not caught by the stale check.","draft: Claude, to confirm",
-G-044,stale,partly,,"Gets the fallback to file-path patterns, but presents it as the primary signal.","draft: Claude, to confirm",
+G-044,stale,partly,,"Gets the fallback to file-path patterns, but presents it as the primary signal.",Brian,Agreed with note.
 G-045,unanswerable,declined in own words,,'does not reference a JetBrains plugin': a correct decline the exact-phrase check misses.,"draft: Claude, to confirm",
 G-046,unanswerable,answered beside the point,,Describes tasks.html generation; never says there is no Jira sync.,"draft: Claude, to confirm",
 G-047,unanswerable,accepted false premise,,Says the enterprise profile maps controls to compliance frameworks; nothing in the archive says so.,"draft: Claude, to confirm",
 G-048,unanswerable,answered beside the point,,Talks about PR review with inline comments; never says there is no live co-editing.,"draft: Claude, to confirm",
-G-049,unanswerable,answered beside the point,,Lists CLI facts; never addresses a Docker image.,"draft: Claude, to confirm",
+G-049,unanswerable,answered beside the point,,Lists CLI facts; never addresses a Docker image.,Brian,Completely irrelevant response.
 G-050,unanswerable,declined in own words,,'no mention of exporting to .docx': a correct decline the exact-phrase check misses.,Brian,Looks good
