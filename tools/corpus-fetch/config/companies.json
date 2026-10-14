@@ -1,0 +1,27 @@
+{
+  "by_ticker": [
+    {"ticker": "ACU",  "forms": ["10-K"], "start": "2025-01-01", "limit": 2, "why": "ACME United Corp: a real ACME, legal proceedings say nothing pending"},
+    {"ticker": "ACI",  "forms": ["10-K"], "start": "2025-01-01", "limit": 1, "why": "Albertsons: owns the Acme Markets banner"},
+    {"ticker": "WBD",  "forms": ["10-K"], "start": "2024-01-01", "end": "2024-12-31", "limit": 1, "why": "Warner Bros. Discovery FY2023: the year Coyote vs. Acme was shelved"},
+    {"ticker": "HOOD", "forms": ["10-K"], "start": "2024-01-01", "end": "2025-12-31", "limit": 2, "why": "Retail broker: T+1 before and after"},
+    {"ticker": "SCHW", "forms": ["10-K"], "start": "2024-01-01", "end": "2025-12-31", "limit": 2, "why": "Broker-dealer: T+1 before and after"},
+    {"ticker": "IBKR", "forms": ["10-K"], "start": "2024-01-01", "end": "2025-12-31", "limit": 2, "why": "Broker-dealer: T+1 before and after"},
+    {"ticker": "VIRT", "forms": ["10-K"], "start": "2024-01-01", "end": "2025-12-31", "limit": 2, "why": "Market maker: T+1 before and after"},
+    {"ticker": "BR",   "forms": ["10-K"], "start": "2023-07-01", "end": "2025-12-31", "limit": 2, "why": "Post-trade technology: June fiscal year"},
+    {"ticker": "BK",   "forms": ["10-K"], "start": "2024-01-01", "end": "2024-12-31", "limit": 1, "why": "Custodian"},
+    {"ticker": "STT",  "forms": ["10-K"], "start": "2024-01-01", "end": "2024-12-31", "limit": 1, "why": "Custodian"},
+    {"ticker": "PLTR", "forms": ["10-K"], "start": "2025-01-01", "limit": 1, "why": "Palantir today, to set against its 2020 S-1"},
+    {"ticker": "INFY", "forms": ["20-F"], "start": "2024-01-01", "limit": 1, "why": "Indian issuer: home market T+1 since 2023"},
+    {"ticker": "HDB",  "forms": ["20-F"], "start": "2024-01-01", "limit": 1, "why": "Indian bank"},
+    {"ticker": "SHOP", "forms": ["40-F", "10-K"], "start": "2024-01-01", "limit": 1, "why": "Canadian issuer: Canada T+1 on 27 May 2024"},
+    {"ticker": "BCS",  "forms": ["20-F"], "start": "2025-01-01", "limit": 1, "why": "UK bank: UK T+1 not until 11 Oct 2027"}
+  ],
+  "explicit": [
+    {"id": "pltr-s1-2020", "cik": 1321655, "adsh": "0001193125-20-230013", "document": "d904406ds1.htm", "form": "S-1",
+     "why": "Palantir direct-listing prospectus: Karp's letter vs later risk factors and 'current only as of its date'"},
+    {"id": "pltr-classf-8k-2022", "cik": 1321655, "adsh": "0001193125-22-313008", "form": "8-K",
+     "why": "Class F charter amendment: earlier descriptions go stale without saying so"},
+    {"id": "ipoe-402-2021", "cik": 1818874, "adsh": "0001104659-21-053883", "document": "tm2113660d1_8k.htm", "form": "8-K",
+     "why": "Item 4.02: audited statements 'should no longer be relied upon'"}
+  ]
+}

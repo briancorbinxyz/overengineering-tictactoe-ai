@@ -1,0 +1,3 @@
+data/finance-corpus/raw/
+__pycache__/
+*.pyc

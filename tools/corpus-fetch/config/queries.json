@@ -1,0 +1,20 @@
+[
+  {"id": "t1-us-10k", "q": "\"T+1\" \"settlement cycle\"", "forms": ["10-K"], "start": "2023-01-01", "end": "2025-12-31", "max_pages": 3,
+   "why": "US issuers describing the move to T+1 (before and after 28 May 2024)"},
+  {"id": "t1-foreign", "q": "\"T+1\" \"settlement cycle\"", "forms": ["20-F", "40-F", "6-K"], "start": "2023-01-01", "end": "2026-10-14", "max_pages": 2,
+   "why": "Foreign private issuers: Canada (T+1 27 May 2024), India, UK/EU (T+1 from 11 Oct 2027)"},
+  {"id": "rule-15c6-1", "q": "\"15c6-1\"", "forms": ["10-K", "10-Q", "8-K"], "start": "2022-01-01", "end": "2025-12-31", "max_pages": 2,
+   "why": "Filings citing the rule itself: an identifier lookup by rule number"},
+  {"id": "t2-2017", "q": "\"T+2\" \"settlement cycle\"", "forms": ["10-K"], "start": "2016-06-01", "end": "2018-12-31", "max_pages": 1,
+   "why": "The previous change (T+3 to T+2, 5 Sep 2017): superseded statements"},
+  {"id": "acme-markets", "q": "\"Acme Markets\"", "forms": ["10-K", "10-Q", "8-K"], "start": "2023-01-01", "end": "2026-10-14", "max_pages": 1,
+   "why": "Real Acme entities for the 'ACME is being sued' ambiguity case"},
+  {"id": "acme-united", "q": "\"Acme United\"", "forms": ["10-K"], "start": "2024-01-01", "end": "2026-10-14", "max_pages": 1,
+   "why": "ACME United Corp (ACU), the likeliest wrong link for 'ACME'"},
+  {"id": "coyote-acme", "q": "\"Coyote vs. Acme\" OR \"Coyote v. Acme\"", "forms": [], "start": "2023-01-01", "end": "2026-10-14", "max_pages": 1,
+   "why": "Does any filing mention the film? Zero hits is itself a useful answer"},
+  {"id": "item-402-2021", "q": "\"should no longer be relied upon\"", "forms": ["8-K"], "start": "2021-04-12", "end": "2021-05-31", "max_pages": 1,
+   "why": "Item 4.02 non-reliance notices after the SPAC warrant statement"},
+  {"id": "rule-412", "q": "\"modified or superseded\" \"incorporated by reference\"", "forms": ["S-3"], "start": "2024-01-01", "end": "2024-12-31", "max_pages": 1,
+   "why": "Rule 412 language: later documents silently supersede earlier ones"}
+]
