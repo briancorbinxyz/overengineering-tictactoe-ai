@@ -1,0 +1,108 @@
+# Source profile: internal email (mbox / .eml) of the fictional Tallowmere Asset Management.
+#
+# Rules from unofficial_relationships.md, section 7:
+#   1. Ordering is not supersession. replies-to never changes a prior message's standing.
+#   2. Structural supersession (an edit event on the same object) exists for chat, not email.
+#   3. Semantic correction is claim-level and provisional: a later message's correction or
+#      resolution produces claim/mention assessments, never a document standing change.
+#   4. Same author beats same distribution; a different sender's denial is a stance.
+#   5. Subject-only matches never imply more than same-thread-candidate.
+#   6. Forwards are quotes, never replies-to.
+# The cue phrases and the 7-day window are unvalidated design choices: measure them on a small
+# labelled set before trusting them.
+
+source_id: email
+kind: email
+adapter: mbox
+match: "doc.media_type in ['message/rfc822', 'application/mbox'] && doc.archive == 'tallowmere-mail'"
+
+partition:
+  processor: java:MimeSplitter@0.4               # one message = one document; quoted blocks -> '#quote-n'
+units:
+  - {select: "body.new_text", anchor: "'message'", statement: record}
+  - {select: "body.quoted[*]", anchor: "'quote-' + index", statement: record}
+
+fields:
+  message_id: "header('Message-ID')"
+  in_reply_to: "first_bracketed(header('In-Reply-To'))"     # JWZ: take the first <...> token
+  references: "bracketed_all(header('References'))"
+  date: "utc(header('Date'))"                                # 'Mon, 31 Aug 2026 08:12 -0400' -> 2026-08-31T12:12:00Z
+  from: "lower(address(header('From')))"
+  to: "lower(addresses(header('To') + ',' + header('Cc')))"
+  list_id: "header('List-Id')"
+  subject: "header('Subject')"
+  subject_key: "casefold(strip_prefixes(fields.subject, ['re', 'fw', 'fwd', 'aw', 'sv']))"
+  thread_index_guid: "thread_index_guid(header('Thread-Index'))"   # Outlook; bytes 6..21 of the decoded value
+
+identifiers:
+  - {scheme: email:message-id, value: "fields.message_id", on: document}
+  # Only thread ROOTS get a subject key, so a subject match points at a root, never at a reply.
+  - {scheme: email:thread-subject, value: "fields.subject_key", on: document,
+     when: "fields.in_reply_to == '' && size(fields.references) == 0 && !fields.subject.matches('(?i)^(re|fwd?|aw|sv):')"}
+
+dates:
+  valid_from: "fields.date"                      # RFC 5322 Date: when the author finished it
+  published_at: "fields.date"
+  # recorded_from: when the archive delivered it to this KB (synthetic layer: Date + jitter).
+
+trust:
+  access: "'dist:' + distribution(fields.to, fields.list_id)"   # never shown outside the original distribution
+  sensitivity: 2
+  publisher: "fields.from"
+  reliability: unvetted
+  force: none
+  authenticity: original
+  trust_zone: internal
+register: factual                                 # a genuine record that someone wrote this
+
+threading:
+  deterministic:
+    - {id: threading.in-reply-to, when: "fields.in_reply_to != ''", type: replies-to, origin: markup, confidence: 1.0,
+       to_key: {scheme: email:message-id, value: "fields.in_reply_to"}}
+    - {id: threading.references, when: "fields.in_reply_to == '' && size(fields.references) > 0", type: replies-to,
+       origin: markup, confidence: 1.0, to_key: {scheme: email:message-id, value: "fields.references[size(fields.references) - 1]"}}
+  heuristic:
+    - id: threading.heuristic
+      when: "fields.in_reply_to == '' && size(fields.references) == 0 && fields.subject.matches('(?i)^(re|aw|sv):')"
+      type: same-thread-candidate
+      origin: prose-pattern
+      confidence: 0.6
+      to_key: {scheme: email:thread-subject, value: "fields.subject_key"}
+      require: [participants_overlap, within_days_7]
+forwarding:
+  when: "fields.subject.matches('(?i)^fwd?:') || body.contains('-----Original Message-----') || body.contains('Begin forwarded message')"
+  type: quotes
+  origin: prose-pattern
+
+claims:                                          # model extraction, stored immutably with its hashes
+  extractor: {model: "qwen3:8b@<digest>", prompt_sha256: "<sha>", schema_sha256: "<sha>"}
+  modality_cues: {hedged: ["i heard", "rumou?r", "apparently", "not confirmed", "does anyone know"]}
+  initial:
+    - {dimension: world, value: real, method: rule}
+    - {dimension: verification, value: unverified, method: rule, when: "claim.modality == 'hedged'"}
+  mentions: {linker: "alias-candidates@v1", keep_candidates: true, resolve_when_unique_only: true}
+
+corrections:
+  # Only on a DETERMINISTIC thread (replies-to bound), from the SAME sender, with an explicit cue.
+  require: "link('replies-to').bound && fields.from == parent.fields.from"
+  cues:
+    resolves: ["it's the plot of", "it's a film", "it's from the movie", "false alarm", "turns out", "to clarify"]
+    corrects: ["correction:", "update:", "my mistake"]
+    retracts: ["please disregard", "ignore my previous", "retract"]
+  emit:
+    - {id: corrections.resolves, cue: resolves, type: resolves, origin: prose-pattern, confidence: 0.8,
+       to_key: {scheme: email:message-id, value: "fields.in_reply_to"}}
+    - {id: corrections.corrects, cue: corrects, type: corrects, origin: prose-pattern, confidence: 0.7,
+       to_key: {scheme: email:message-id, value: "fields.in_reply_to"}}
+  # Effects are decided by consequences.yaml: claim/mention level, provisional until a human confirms.
+
+review:
+  - when: "link('same-thread-candidate').emitted && any_cue(body)"
+    queue: {class: standard, reason: thread-by-subject-only,
+            suggest: "resolves -> thread root; show feature checks: subject, participants, In-Reply-To, same sender"}
+  - when: "claim.modality == 'hedged' && mention.resolution.startsWith('ambiguous')"
+    queue: {class: standard, reason: ambiguous-rumour, suggest: "candidates in rank order; never auto-link to an issuer"}
+
+fixtures: fixtures/email/{case}/{input.eml, expected.jsonl}     # include the 08:12 / 09:40 pair and the headerless variant
+owner: brian
+review_by: 2027-04-14

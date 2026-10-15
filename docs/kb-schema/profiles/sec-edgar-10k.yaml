@@ -1,0 +1,110 @@
+# Source profile: SEC EDGAR annual reports (10-K, 10-K/A, 10-KT).
+# Layer 2 (detection). Its sha256 goes into ingest_run.profile_sha256; every link it emits
+# carries emitted_by 'profile:sec-edgar-10k@<sha12>#<rule>'. CEL for predicates, JSONPath for
+# the submissions JSON, XPath for inline XBRL. A change that alters output must update the
+# golden fixtures in the same commit.
+#
+# Field-name status (see research_notes/.../official_relationships.md):
+#   verified on SEC pages: dei:DocumentType, dei:AmendmentFlag, dei:DocumentPeriodEndDate,
+#     dei:EntityCentralIndexKey, dei:EntityFileNumber; index-page "Accepted", "Period of Report".
+#   third-party / background only, check on the first live run: the submissions parallel arrays
+#     reportDate, acceptanceDateTime, fileNumber, items; dei:AmendmentDescription being required.
+#   does NOT exist: any structured field saying which accession an /A amends. The target of an
+#     amendment is found by (CIK, base form, period of report), never by accession.
+
+source_id: sec-edgar-10k
+kind: filing
+adapter: edgar-ixbrl
+match: >-
+  doc.host == 'www.sec.gov' && doc.path.startsWith('/Archives/edgar/data/')
+  && fields.form in ['10-K', '10-K/A', '10-KT', '10-KT/A']
+
+acquire:
+  rate_limit: {requests_per_second: 5, user_agent_required: true}   # SEC allows 10/s per user; stay well under
+  land: raw/sha256/{sha[0:2]}/{sha[2:4]}/{sha}                       # write-once; never overwrite a digest
+
+partition:
+  processor: java:EdgarItemSplitter@1.2        # tier 1: trusted Java bean (iXBRL Part/Item split)
+  quality_gates:
+    - "parse.items_found >= 4"                  # Items 1, 1A, 7, 8 at least
+    - "parse.text_chars > 20000"
+
+units:
+  anchor: item                                  # 'Item 1A', 'Item 8'; the cover page is 'cover'
+  statement: record                             # a filing says what was reported, as of its period
+  heading_path: "'Part ' + unit.part + ' > ' + unit.item + '. ' + unit.title"
+  split_long: {max_tokens: 1200, keep_tables_whole: true}
+
+fields:                                         # JSONPath into submissions JSON / XPath into iXBRL
+  cik: "$.cik"
+  form: "$.filings.recent.form[i]"
+  accession: "$.filings.recent.accessionNumber[i]"
+  report_date: "$.filings.recent.reportDate[i]"                 # period of report  [unverified field name]
+  accepted: "$.filings.recent.acceptanceDateTime[i]"            # [unverified field name]
+  period_end: "//ix:nonNumeric[@name='dei:DocumentPeriodEndDate']"
+  amendment_flag: "//ix:nonNumeric[@name='dei:AmendmentFlag']"
+  amendment_description: "//ix:nonNumeric[@name='dei:AmendmentDescription']"   # may be absent
+
+identifiers:                                    # what links elsewhere can name this filing by
+  - {scheme: edgar:accession, value: "fields.accession", on: cover}
+  - {scheme: edgar:cik+form+period, value: "fields.cik + '|' + fields.form + '|' + period()", on: cover}
+  - {scheme: edgar:cik+form+period+item, value: "fields.cik + '|' + fields.form + '|' + period() + '|' + unit.item", on: each_unit}
+  - {scheme: ticker, value: "fields.tickers", on: cover, optional: true}
+# period() = fields.report_date if present, else fields.period_end. Never the filing date.
+
+dates:
+  valid_from: "period()"                        # what the filing reports applies to its period
+  valid_grade: element
+  published_at: "fields.accepted"               # source time: EDGAR acceptance (UTC)
+  # recorded_from is NOT mapped: it is when this knowledge base recorded the filing (the run's clock).
+
+trust:                                          # ingest-time defaults -> document columns -> 'initial' ledger rows
+  access: public
+  sensitivity: 0
+  publisher: "'cik:' + fields.cik"
+  reliability: authoritative
+  force: official
+  authenticity: original                        # fetched from sec.gov over TLS; not a copy
+  trust_zone: external
+register: factual
+
+links:
+  - id: amendment                               # 10-K/A -> the original it amends
+    when: "fields.form.endsWith('/A')"
+    from: cover
+    type: amends
+    origin: status+link                         # the form type and the period are structured
+    confidence: 1.0
+    to_key: {scheme: edgar:cik+form+period, value: "fields.cik + '|' + fields.form.replace('/A', '') + '|' + period()"}
+    valid_from: "fields.accepted"
+  - id: restatement                             # the amendment restates financial statements
+    when: >-
+      fields.form.endsWith('/A') && fields.amendment_flag == 'true'
+      && fields.amendment_description.matches('(?i)restat')
+    from: "units.filter(u, u.item == 'Item 8')"
+    type: restates
+    origin: prose-pattern                       # the reason is prose (AmendmentDescription)
+    confidence: 0.9
+    to_key: {scheme: edgar:cik+form+period, value: "fields.cik + '|' + fields.form.replace('/A', '') + '|' + period()"}
+    valid_from: "fields.accepted"
+  - id: late-notice-fulfilled                   # NT 10-K anticipates this filing: not supersession
+    when: "true"
+    from: cover
+    type: refers-to
+    origin: status+link
+    confidence: 1.0
+    to_key: {scheme: edgar:cik+form+period, value: "fields.cik + '|NT ' + fields.form + '|' + period()"}
+    optional_target: true                       # most filings have no NT notice; never sent to the inbox
+
+review:
+  - when: "fields.cik == '' || period() == ''"
+    queue: {class: standard, reason: unclassifiable-arrival-path}     # quarantine; never default silently
+  - when: "link.resolution == 'ambiguous'"
+    queue: {class: standard, reason: ambiguous-target,
+            suggest: "candidates ranked by acceptance time before this filing"}
+  - when: "link.pending_days > 30"
+    queue: {class: standard, reason: dangling-target}
+
+fixtures: fixtures/sec-edgar-10k/{case}/{input.bin, expected.jsonl}
+owner: brian
+review_by: 2027-04-14

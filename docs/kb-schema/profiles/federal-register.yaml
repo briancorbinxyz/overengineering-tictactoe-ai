@@ -1,0 +1,100 @@
+# Source profile: Federal Register documents via the federalregister.gov API.
+#
+# Confirmed API field names (the R client's manual; semantics from third-party guides):
+#   document_number, citation, type, action, publication_date, effective_on, dates,
+#   regulation_id_numbers, cfr_references, correction_of, corrections, full_text_xml_url.
+# Unverified: the sub-keys of cfr_references and whether correction_of holds a document number
+# or a URL (handled both ways below). The compliance date exists only in the free-text `dates`.
+#
+# Dating rule (Finance second corpus design): the valid time of rule TEXT is its compliance or
+# application date (US T+1: 28 May 2024, not 5 May 2023). The release itself is a record whose
+# valid time is its publication. Effective and compliance dates are also kept as facets.
+
+source_id: federal-register
+kind: regulation
+adapter: fedreg-api
+match: "doc.host == 'www.federalregister.gov' && doc.path.startsWith('/api/v1/documents/')"
+
+partition:
+  processor: java:FederalRegisterXmlSplitter@0.3     # preamble sections; amendatory instructions per section
+  quality_gates: ["parse.sections_found >= 1"]
+
+units:
+  - {select: "preamble/*", anchor: "section.heading", statement: record}
+  - {select: "regtext/amdpar", anchor: "'Amend ' + section.cfr", statement: normative}
+
+fields:
+  document_number: "$.document_number"
+  citation: "$.citation"                         # '88 FR 13872'
+  type: "$.type"                                 # Rule | Proposed Rule | Notice | Presidential Document
+  action: "$.action"                             # 'Final rule.', 'Correcting amendments.'
+  publication_date: "$.publication_date"
+  effective_on: "$.effective_on"
+  dates_text: "$.dates"
+  rins: "$.regulation_id_numbers"
+  cfr_references: "$.cfr_references"
+  correction_of: "$.correction_of"
+  compliance_date: "regex(fields.dates_text, '(?i)Compliance [Dd]ate[s]?:\\s*(.+?)\\.')"
+
+identifiers:
+  - {scheme: fr:doc, value: "fields.document_number", on: document}
+  - {scheme: fr:cite, value: "fields.citation", on: document}
+  - {scheme: sec:release, value: "regex(fields.dates_text + ' ' + doc.title, 'Release No\\. (\\d{2}-\\d{5})')", on: document, optional: true}
+  - {scheme: cfr, value: "unit.cfr_section", on: normative_units}
+
+dates:
+  valid_from:
+    record: "fields.publication_date"
+    normative: "has(fields.compliance_date) ? fields.compliance_date : fields.effective_on"
+  published_at: "fields.publication_date"
+facets:
+  - {name: effective_on, value: "fields.effective_on"}
+  - {name: compliance_date, value: "fields.compliance_date"}
+  - {name: rin, value: "fields.rins"}
+
+trust:
+  access: public
+  sensitivity: 0
+  publisher: "'agency:' + fields.agencies[0].slug"
+  reliability: authoritative
+  force: "fields.type == 'Rule' ? 'binding' : (fields.type == 'Proposed Rule' ? 'none' : 'official')"
+  authenticity: original
+  trust_zone: external
+register: factual
+
+relations:
+  - id: relations.correction_of                 # a correction document points at what it corrects
+    when: "has(fields.correction_of) && fields.correction_of != ''"
+    type: corrects
+    origin: status+link
+    confidence: 1.0
+    to_key: {scheme: fr:doc, value: "fields.correction_of.contains('/') ? last_segment(fields.correction_of) : fields.correction_of"}
+    valid_from: "fields.effective_on"
+  - id: relations.amends-cfr                    # "Amend § 240.15c6-1 by revising paragraph (a)..."
+    when: "fields.type == 'Rule'"
+    for_each: "regex_all(unit.text, 'Amend § ?(\\d+\\.[\\d-]+)')"
+    type: amends
+    origin: "has(doc.full_text_xml) ? 'markup' : 'prose-pattern'"
+    confidence: "has(doc.full_text_xml) ? 1.0 : 0.85"
+    to_key: {scheme: cfr, value: "fields.cfr_references[0].title + ' CFR ' + match"}
+    valid_from: "has(fields.compliance_date) ? fields.compliance_date : fields.effective_on"
+
+manual_links:
+  # Relations no publisher encodes. Written by an analyst, origin human, each with an owner and
+  # a review date. The 2022 industry playbook assumed a Q3 2024 transition; the SEC adopted T+1
+  # on 15 Feb 2023 (compliance 28 May 2024). Supersession dates from ADOPTION.
+  - from: {scheme: sec:release, value: "34-96930", unit: compliance-date}
+    type: supersedes
+    to: {document: "sifma-ici-dtcc-t1-playbook-2022-08-01", unit: transition-date}
+    valid_from: 2023-02-15
+    owner: analyst-1
+    review_by: 2027-10-01
+    evidence: "https://www.sec.gov/rule-release/34-96930"
+
+review:
+  - when: "fields.type == 'Rule' && !has(fields.compliance_date) && fields.dates_text.contains('ompliance')"
+    queue: {class: standard, reason: compliance-date-unparsed}
+
+fixtures: fixtures/federal-register/{case}/{input.json, expected.jsonl}
+owner: brian
+review_by: 2027-04-14

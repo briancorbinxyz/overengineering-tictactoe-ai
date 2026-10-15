@@ -1,0 +1,86 @@
+# Source profile: internal research and desk notes (Markdown with frontmatter; fictional
+# Tallowmere desk). Notes are not FINRA Rule 2241 research reports (that rule covers
+# broker-dealer research); its pattern is borrowed only as an analogy: a later note does not
+# replace an earlier note, it changes FACTS (rating, price target, estimates) whose history
+# stays visible. So supersession here is fact-level, keyed (issuer, metric, author), and a
+# note's document standing stays in force. An explicit `supersedes:` in frontmatter is the
+# one deterministic document-level signal.
+
+source_id: research-note
+kind: note
+adapter: obsidian-md
+match: "doc.path.endsWith('.md') && doc.archive == 'tallowmere-notes' && has(frontmatter.id)"
+
+partition:
+  processor: java:MarkdownBlockSplitter@0.5      # heading or ^block-id
+units:
+  - {select: "heading", anchor: "heading.slug", statement: record}
+  - {select: "block[id]", anchor: "'^' + block.id", statement: record}
+
+fields:
+  id: "frontmatter.id"                            # 'RN-FILM-001'
+  author: "lower(frontmatter.author)"
+  desk: "frontmatter.desk"
+  date: "utc(frontmatter.date)"
+  version: "frontmatter.version"
+  supersedes: "frontmatter.supersedes"            # another note id, optional
+  refs: "frontmatter.refs"                        # typed keys: ['edgar:cik+form+period=2098|10-K|2025-12-31']
+  facts: "frontmatter.facts"                      # [{issuer, metric, value, as_of}]
+
+identifiers:
+  - {scheme: note:id, value: "fields.id", on: document}
+
+dates:
+  valid_from: "fields.date"
+  published_at: "fields.date"
+  # recorded_from: the git commit time of the vault, when this KB recorded it.
+
+trust:
+  access: "'dist:' + fields.desk"
+  sensitivity: 1
+  publisher: "fields.author"
+  reliability: reliable
+  force: none
+  authenticity: original
+  trust_zone: internal
+register: "has(frontmatter.register) && frontmatter.register in ['opinion','factual'] ? frontmatter.register : 'factual'"
+
+links:
+  - id: links.frontmatter-supersedes
+    when: "has(fields.supersedes)"
+    type: supersedes
+    origin: markup                                # the author's own frontmatter; same publisher -> applies
+    confidence: 1.0
+    to_key: {scheme: note:id, value: "fields.supersedes"}
+    valid_from: "fields.date"
+  - id: links.frontmatter
+    for_each: "fields.refs"
+    type: refers-to
+    origin: markup
+    confidence: 1.0
+    to_key: {scheme: "split(item, '=')[0]", value: "split(item, '=')[1]"}
+  - id: links.wikilinks                           # [[...]] are untyped: navigation only
+    for_each: "wikilinks(body)"
+    type: refers-to
+    origin: prose-pattern
+    confidence: 0.7
+    to_key: {scheme: note:id, value: "item"}
+
+claims:
+  from_facts: true                                # each frontmatter fact is a claim
+  key: "[fact.issuer, fact.metric, fields.author]"
+  supersede_previous_with_same_key: true          # fact-level: the previous value's row is superseded,
+                                                  # with its own valid_from; the note stays in force
+  initial:
+    - {dimension: verification, value: unverified, method: rule}
+    - {dimension: world, value: "has(frontmatter.world) ? frontmatter.world : 'real'", method: source}
+
+review:
+  - when: "!has(fields.author) || !has(fields.date)"
+    queue: {class: standard, reason: unclassifiable-arrival-path}
+  - when: "claim.verification == 'verified' && evidence.standing in ['do_not_rely','restated','superseded']"
+    queue: {class: expedite, reason: verified-against-demoted-evidence, suggest: "flag at_risk (label) and recheck answers"}
+
+fixtures: fixtures/research-note/{case}/{input.md, expected.jsonl}
+owner: brian
+review_by: 2027-04-14

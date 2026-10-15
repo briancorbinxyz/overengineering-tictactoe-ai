@@ -1,0 +1,81 @@
+# Source profile: EUR-Lex legal acts, identified by CELEX and ELI.
+#
+# ELI publishes typed, directional relations an ingester can read directly: amends/amended_by,
+# corrects/corrected_by, repeals/repealed_by, consolidates/consolidated_by, plus
+# first_date_entry_in_force, date_applicability and date_no_longer_in_force.
+# Unverified: whether EUR-Lex exposes these as RDFa on each page or only via CELLAR SPARQL
+# (both readers are configured; the first that answers wins).
+#
+# A date trap, flagged in the research: for Reg. (EU) 2025/2075 the EUR-Lex metadata panel
+# appeared to show 2027-10-11 as "first date of entry into force", while the act enters into
+# force 20 days after publication and APPLIES from 11 Oct 2027. Never map a panel label to
+# valid_from: read the ELI property, and use date_applicability for when obligations bite.
+
+source_id: eur-lex
+kind: regulation
+adapter: eurlex-html
+match: "doc.host == 'eur-lex.europa.eu' && (doc.path.startsWith('/eli/') || doc.query.uri.startsWith('CELEX:'))"
+
+acquire:
+  reject_if: "response.bytes < 20000 || response.text.contains('cookie') && !response.text.contains('Article 1')"   # bot/cookie pages return 200
+
+partition:
+  processor: java:FormexArticleSplitter@0.2
+units:
+  - {select: "article", anchor: "'Art. ' + article.number", statement: normative}
+  - {select: "article/paragraph", anchor: "'Art. ' + article.number + '(' + paragraph.number + ')'", statement: normative}
+  - {select: "recital", anchor: "'Recital ' + recital.number", statement: record}
+
+fields:
+  celex: "rdfa('eli:id_local') ?? sparql('cdm:resource_legal_id_celex')"
+  eli: "rdfa('eli:is_realized_by') ?? doc.canonical_uri"
+  date_document: "rdfa('eli:date_document')"
+  in_force: "rdfa('eli:first_date_entry_in_force')"
+  applies: "rdfa('eli:date_applicability')"
+  no_longer: "rdfa('eli:date_no_longer_in_force')"
+  amends: "rdfa_all('eli:amends')"
+  corrects: "rdfa_all('eli:corrects')"
+  repeals: "rdfa_all('eli:repeals')"
+  consolidates: "rdfa_all('eli:consolidates')"
+
+identifiers:
+  - {scheme: celex, value: "fields.celex", on: document}          # corrigenda carry R(nn): their own CELEX
+  - {scheme: eli, value: "fields.eli", on: document}
+
+dates:
+  valid_from: "has(fields.applies) ? fields.applies : fields.in_force"   # EU T+1: 2027-10-11, not 2025-11-03
+  valid_to: "fields.no_longer"
+  published_at: "fields.date_document"
+facets:
+  - {name: first_date_entry_in_force, value: "fields.in_force"}
+  - {name: date_applicability, value: "fields.applies"}
+
+trust:
+  access: public
+  sensitivity: 0
+  publisher: "'eu:publications-office'"
+  reliability: authoritative
+  force: "fields.celex.matches('^3\\d{4}[RL]') ? 'binding' : 'official'"
+  authenticity: "doc.is_consolidated ? 'copy' : 'original'"          # consolidated text is a point-in-time copy
+  trust_zone: external
+register: factual
+
+relations:
+  - {id: eli.amends, property: eli:amends, type: amends, origin: markup, confidence: 1.0,
+     to_key: {scheme: eli, value: "target"}, valid_from: "fields.applies"}
+  - {id: eli.corrects, property: eli:corrects, type: corrects, origin: markup, confidence: 1.0,
+     to_key: {scheme: eli, value: "target"}, valid_from: "fields.date_document"}
+  - {id: eli.repeals, property: eli:repeals, type: repeals, origin: markup, confidence: 1.0,
+     to_key: {scheme: eli, value: "target"}, valid_from: "fields.applies"}
+  - {id: eli.consolidates, property: eli:consolidates, type: consolidates, origin: markup, confidence: 1.0,
+     to_key: {scheme: eli, value: "target"}}
+
+review:
+  - when: "!has(fields.applies) && !has(fields.in_force)"
+    queue: {class: standard, reason: no-applicability-date}
+  - when: "has(fields.applies) && has(fields.in_force) && fields.applies < fields.in_force"
+    queue: {class: standard, reason: dates-inverted}
+
+fixtures: fixtures/eur-lex/{case}/{input.html, expected.jsonl}    # include 32025R2075
+owner: brian
+review_by: 2027-04-14
