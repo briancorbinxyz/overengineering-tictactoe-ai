@@ -1,0 +1,73 @@
+# Layer 3: the consequence decision table. What a link of type T, emitted with authority A
+# (and origin O, at confidence >= c), does to the status of its target.
+#
+# Read it like a DMN decision table with hit policy FIRST: within one link type, rows are
+# tried top to bottom and the first match wins. '*' matches anything.
+#
+#   authority  the emitter's authority relative to the link's target, computed from the data:
+#                human      the link was written by an analyst (origin=human)
+#                model      the link came from a model (origin=model)
+#                publisher  the linking document has the same publisher as the target
+#                           (same CIK, same sender)
+#                markup     structured markup (origin markup or status+link) from an official document
+#                heuristic  anything else (prose patterns from another publisher)
+#   outcome    apply  append a non-provisional row (an exclusion needs publisher, markup or human
+#                     authority; the schema rejects anything else)
+#              label  append a provisional row: a label, never an exclusion
+#              none   no row
+#
+# Each link type below is one rule (rule_id 'link-effect:<type>'). Its rows are compiled to
+# canonical JSON (sorted keys, no spaces) and stored as rule_version.body; version_sha256 is
+# sha256 of that JSON. Changing a row is a new rule version:
+#   change_kind: fix   our interpretation was wrong. Applies to the old version's whole valid
+#                      range from its adoption time; earlier AS_KNOWN results are unchanged.
+#   change_kind: new   the world's rule changed from effective_from. Derivations for earlier
+#                      valid times are left exactly as they were.
+# Link types with effect 'none' have no rule: they never touch status.
+
+rules:
+  amends:
+    - {authority: publisher, origin: "*", min_confidence: 0.0, outcome: apply, dimension: standing, value: amended}
+    - {authority: markup,    origin: "*", min_confidence: 0.0, outcome: apply, dimension: standing, value: amended}
+    - {authority: human,     origin: "*", min_confidence: 0.0, outcome: apply, dimension: standing, value: amended}
+    - {authority: "*",       origin: "*", min_confidence: 0.0, outcome: label, dimension: standing, value: amended}
+  corrects:
+    # An unofficial correction (an email "correction:" cue) acts on claims, not documents.
+    - {authority: publisher, origin: prose-pattern, min_confidence: 0.0, outcome: none, dimension: standing, value: corrected}
+    - {authority: publisher, origin: "*", min_confidence: 0.0, outcome: apply, dimension: standing, value: corrected}
+    - {authority: markup,    origin: "*", min_confidence: 0.0, outcome: apply, dimension: standing, value: corrected}
+    - {authority: human,     origin: "*", min_confidence: 0.0, outcome: apply, dimension: standing, value: corrected}
+    - {authority: "*",       origin: "*", min_confidence: 0.0, outcome: label, dimension: standing, value: corrected}
+  supersedes:
+    - {authority: publisher, origin: "*", min_confidence: 0.8, outcome: apply, dimension: standing, value: superseded}
+    - {authority: markup,    origin: "*", min_confidence: 0.0, outcome: apply, dimension: standing, value: superseded}
+    - {authority: human,     origin: "*", min_confidence: 0.0, outcome: apply, dimension: standing, value: superseded}
+    - {authority: "*",       origin: "*", min_confidence: 0.0, outcome: label, dimension: standing, value: superseded}
+  superseded-by:
+    - {authority: publisher, origin: "*", min_confidence: 0.8, outcome: apply, dimension: standing, value: superseded}
+    - {authority: markup,    origin: "*", min_confidence: 0.0, outcome: apply, dimension: standing, value: superseded}
+    - {authority: human,     origin: "*", min_confidence: 0.0, outcome: apply, dimension: standing, value: superseded}
+    - {authority: "*",       origin: "*", min_confidence: 0.0, outcome: label, dimension: standing, value: superseded}
+  do-not-rely:
+    # The issuer itself says its own statements should not be relied on: applies automatically,
+    # even though the target was found from prose (form + period), provided the key resolved to
+    # exactly one filing. Anyone else saying it is a label (an outsider-triggered exclusion would
+    # be an availability attack).
+    - {authority: publisher, origin: "*", min_confidence: 0.8, outcome: apply, dimension: standing, value: do_not_rely}
+    - {authority: "*",       origin: "*", min_confidence: 0.0, outcome: label, dimension: standing, value: do_not_rely}
+  restates:
+    - {authority: publisher, origin: "*", min_confidence: 0.8, outcome: apply, dimension: standing, value: restated}
+    - {authority: "*",       origin: "*", min_confidence: 0.0, outcome: label, dimension: standing, value: restated}
+  repeals:
+    - {authority: publisher, origin: "*", min_confidence: 0.0, outcome: apply, dimension: standing, value: repealed}
+    - {authority: markup,    origin: "*", min_confidence: 0.0, outcome: apply, dimension: standing, value: repealed}
+    - {authority: human,     origin: "*", min_confidence: 0.0, outcome: apply, dimension: standing, value: repealed}
+    - {authority: "*",       origin: "*", min_confidence: 0.0, outcome: label, dimension: standing, value: repealed}
+  resolves:
+    # Claim- and mention-level: derive_resolves computes the values (world, verification,
+    # resolution) from the resolving message's own mentions. The table only decides whether
+    # they are provisional. Even the original sender's self-correction stays provisional:
+    # denial detection from text is unreliable, so a human confirms.
+    - {authority: human, origin: "*", min_confidence: 0.0, outcome: apply, dimension: "*", value: "*"}
+    - {authority: "*",   origin: "*", min_confidence: 0.5, outcome: label, dimension: "*", value: "*"}
+    - {authority: "*",   origin: "*", min_confidence: 0.0, outcome: none,  dimension: "*", value: "*"}

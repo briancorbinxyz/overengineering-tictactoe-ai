@@ -1,0 +1,99 @@
+# Source profile: SEC EDGAR current reports (8-K, 8-K/A), with Item 4.02 non-reliance detection.
+#
+# What EDGAR gives and does not give (official_relationships.md, section 2):
+#   - the item code "4.02" is structured: the submissions `items` array (comma-separated,
+#     [unverified field name]) and the header's ITEM INFORMATION line [unverified].
+#   - the AFFECTED FILING IS NOT. Item 4.02(a) requires "identification of the financial
+#     statements and years or periods covered" in prose; filers name a form and a period
+#     ("Annual Report on Form 10-K for the fiscal year ended December 31, 2020"), sometimes an
+#     original filing date, never an accession number.
+# So the link carries a typed composite key (edgar:cik+form+period) and is bound later by
+# link_resolution: to exactly one filing published before this 8-K, or to nothing (ambiguous
+# -> inbox). The do_not_rely status then applies automatically because the publisher is the
+# same CIK (consequences.yaml), valid from the target's own period ("never reliable").
+
+source_id: sec-edgar-8k
+kind: filing
+adapter: edgar-ixbrl
+match: >-
+  doc.host == 'www.sec.gov' && doc.path.startsWith('/Archives/edgar/data/')
+  && fields.form in ['8-K', '8-K/A']
+
+partition:
+  processor: java:EdgarItemSplitter@1.2
+  quality_gates: ["parse.items_found >= 1"]
+
+units:
+  anchor: item                                  # 'Item 4.02', 'Item 9.01'
+  statement: record
+
+fields:
+  cik: "$.cik"
+  form: "$.filings.recent.form[i]"
+  accession: "$.filings.recent.accessionNumber[i]"
+  report_date: "$.filings.recent.reportDate[i]"           # date of the triggering event [unverified field name]
+  accepted: "$.filings.recent.acceptanceDateTime[i]"      # [unverified field name]
+  items: "$.filings.recent.items[i].split(',')"           # e.g. ['4.02', '9.01']  [unverified field name]
+
+identifiers:
+  - {scheme: edgar:accession, value: "fields.accession", on: cover}
+
+dates:
+  valid_from: "fields.report_date"             # the event (e.g. the date of the non-reliance conclusion)
+  published_at: "fields.accepted"
+
+trust:
+  access: public
+  sensitivity: 0
+  publisher: "'cik:' + fields.cik"
+  reliability: authoritative
+  force: official
+  authenticity: original
+  trust_zone: external
+register: factual
+
+extract:                                        # prose patterns over the Item 4.02 unit only
+  item_4_02:
+    section: "Item 4.02"
+    patterns:
+      period_ended: '(?i)(?:fiscal )?(?:year|quarter|quarterly period|six months|nine months)s? ended (\w+ \d{1,2}, \d{4})'
+      as_of_date: '(?i)as of (\w+ \d{1,2}, \d{4})'
+      form_name: '(?i)(Annual Report on Form 10-K|Quarterly Reports? on Form 10-Q|Form S-[14](?:/A)?|Form 10-K/A)'
+      originally_filed: '(?i)originally filed (?:on )?(\w+ \d{1,2}, \d{4})'
+      conclusion_date: '(?i)on (\w+ \d{1,2}, \d{4}),? the (?:Audit Committee|Board)'
+
+rules:
+  - id: rules.item-4.02
+    when: "'4.02' in fields.items && unit.item == 'Item 4.02'"
+    # One link per (form, period) pair found; a 4.02 often names several periods.
+    for_each: "pairs(extract.item_4_02.form_name, extract.item_4_02.period_ended + extract.item_4_02.as_of_date)"
+    link:
+      type: do-not-rely
+      origin: prose-pattern
+      confidence: "pair.form != '' && pair.period != '' ? 0.9 : 0.6"     # below 0.8 -> label only
+      to_key:
+        scheme: edgar:cik+form+period
+        value: "fields.cik + '|' + base_form(pair.form) + '|' + iso_date(pair.period)"
+      valid_from: "iso_date(extract.item_4_02.conclusion_date[0])"
+    # No assessment here: layer 3 (consequences.yaml, do-not-rely) decides, once the key binds.
+  - id: rules.auditor-letter                    # Item 4.02(c): the auditor's letter arrives by 8-K/A
+    when: "fields.form == '8-K/A' && '4.02' in fields.items"
+    link:
+      type: refers-to                           # a scheduled completion, not a correction
+      origin: status+link
+      confidence: 1.0
+      to_key: {scheme: edgar:cik+form+period, value: "fields.cik + '|8-K|' + fields.report_date"}
+
+review:
+  - when: "'4.02' in fields.items && size(extract.item_4_02.period_ended) == 0 && size(extract.item_4_02.as_of_date) == 0"
+    queue: {class: expedite, reason: non-reliance-target-not-found,
+            suggest: "filings of this CIK in the 18 months before acceptance, newest first"}
+  - when: "link.resolution == 'ambiguous'"
+    queue: {class: expedite, reason: ambiguous-target}
+  - when: "link.pending_days > 7"
+    queue: {class: standard, reason: non-reliance-target-not-ingested,
+            suggest: "fetch the named filing from the submissions JSON (cheap, no document fetch)"}
+
+fixtures: fixtures/sec-edgar-8k/{case}/{input.bin, expected.jsonl}   # include IPOE's 2021 4.02 (form + period, no accession)
+owner: brian
+review_by: 2027-04-14

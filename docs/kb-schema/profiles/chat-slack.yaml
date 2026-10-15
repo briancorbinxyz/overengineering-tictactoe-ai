@@ -1,0 +1,82 @@
+# Source profile: Slack channel export / Events API (fictional Tallowmere workspace).
+#
+# Chat has what email lacks: structural edit and delete events on the same object.
+#   message_changed (same channel + ts)  -> a NEW VERSION of the same unit (a correction:
+#                                           same valid_from, closes the old recorded_to).
+#                                           Slack drops the original text, so the earlier capture
+#                                           we already hold is the only copy: never overwrite it.
+#   message_deleted (deleted_ts)         -> close recorded_to on the unit's open version; the
+#                                           unit stays, so AS_KNOWN can replay it.
+#   thread_ts != ts                      -> replies-to the thread parent.
+# A message_changed can also fire for metadata only (language), so compare text hashes before
+# writing a version. Semantic corrections in text follow the email rules (claim-level, provisional).
+
+source_id: chat-slack
+kind: chat
+adapter: chat-json
+match: "doc.media_type == 'application/json' && doc.archive == 'tallowmere-slack'"
+
+units:
+  anchor: "event.channel + '|' + event.ts"       # unique per channel
+  statement: record
+  one_document_per: "event.channel + '/' + day(event.ts)"   # a channel-day; units are messages
+
+fields:
+  channel: "$.channel"
+  ts: "$.ts"
+  thread_ts: "$.thread_ts"
+  user: "$.user"
+  text: "$.text"
+  subtype: "$.subtype"
+  edited_ts: "$.message.edited.ts"
+  deleted_ts: "$.deleted_ts"
+
+identifiers:
+  - {scheme: slack:channel+ts, value: "fields.channel + '|' + fields.ts", on: unit}
+
+dates:
+  valid_from: "epoch_utc(fields.ts)"
+  published_at: "has(fields.edited_ts) ? epoch_utc(fields.edited_ts) : epoch_utc(fields.ts)"
+
+trust:
+  access: "'channel:' + fields.channel"          # membership of the channel, as of now
+  sensitivity: 2
+  publisher: "'slack:' + fields.user"
+  reliability: unvetted
+  force: none
+  authenticity: original
+  trust_zone: internal
+register: factual
+
+versions:
+  - id: versions.edit
+    event: message_changed
+    when: "sha256(fields.text) != unit.current_body_hash"
+    action: new_version                           # not a link: same object, new content
+    recorded_at: "epoch_utc(fields.edited_ts)"
+  - id: versions.delete
+    event: message_deleted
+    action: close_recorded                        # recorded_to = deleted time; the text is kept
+    recorded_at: "epoch_utc(fields.deleted_ts)"
+
+threading:
+  deterministic:
+    - {id: threading.thread-ts, when: "has(fields.thread_ts) && fields.thread_ts != fields.ts", type: replies-to,
+       origin: markup, confidence: 1.0, to_key: {scheme: slack:channel+ts, value: "fields.channel + '|' + fields.thread_ts"}}
+
+corrections:                                      # same as email: same author, deterministic thread, explicit cue
+  require: "link('replies-to').bound && fields.user == parent.fields.user"
+  cues:
+    resolves: ["it's the plot of", "false alarm", "turns out", "nvm"]
+    retracts: ["please disregard", "ignore that"]
+  emit:
+    - {id: corrections.resolves, cue: resolves, type: resolves, origin: prose-pattern, confidence: 0.8,
+       to_key: {scheme: slack:channel+ts, value: "fields.channel + '|' + fields.thread_ts"}}
+
+review:
+  - when: "fields.subtype == 'message_changed' && !has(unit.previous_capture)"
+    queue: {class: standard, reason: edit-without-original, suggest: "the pre-edit text is lost; record the gap"}
+
+fixtures: fixtures/chat-slack/{case}/{events.jsonl, expected.jsonl}
+owner: brian
+review_by: 2027-04-14

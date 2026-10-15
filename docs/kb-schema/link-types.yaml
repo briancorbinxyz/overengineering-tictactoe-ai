@@ -1,0 +1,236 @@
+# Link-type catalogue (layer 1: relation semantics). Mirrors the `link_type` seed in
+# extensions.sql; tests/test_schema.py checks the two agree when PyYAML is installed.
+#
+# Fields
+#   inverse        the name of the other direction. Only one direction is stored; the
+#                  inverse is derived at query time (Crossmark stores on the notice).
+#   scope          unit | document | claim. A document-scoped effect lands on the whole
+#                  document; a unit-scoped one on the unit the link (or its key) resolves to.
+#   effect         none   navigation and ranking only
+#                  label  shown beside the text; never changes membership
+#                  standing  may change CURRENT/OFFICIAL membership (an exclusion)
+#   effect_on      to | from: which end receives the effect. superseded-by is stored on the
+#                  OLD item, so its effect lands on its own (from) end.
+#   effect_value   the default value; consequences.yaml decides, per emitter authority,
+#                  whether it applies, is only a provisional label, or does nothing.
+#   time_anchor    where the derived row's valid_from comes from:
+#                    link     the link's own valid_from (adoption of the superseding text)
+#                    target   the valid start of the link's target ("the figures were never reliable")
+#                    emitter  the valid start of the linking unit
+#   exclusion_requires  emitter authorities allowed to exclude non-provisionally
+#                  (anything else is downgraded to a provisional label, whatever the table says)
+#   transitive     always false for status. Chains (A superseded by B superseded by C) are
+#                  followed at query time with a cycle-safe recursive CTE (supersession_head),
+#                  so reversing B's supersession can never leave A stranded as superseded.
+#   interop        nearest standard names, for export only; none of them defines a status effect.
+
+link_types:
+  amends:
+    inverse: amended-by
+    scope: unit
+    effect: label
+    effect_on: to
+    effect_value: amended
+    time_anchor: link
+    exclusion_requires: [publisher, markup, human]
+    transitive: false
+    interop: {cito: "cito:updates", prov: "prov:wasRevisionOf", eli: "eli:amends"}
+    note: "10-K/A (Rule 12b-15 restates whole items); ELI amends. The amended text arrives as its own version."
+  corrects:
+    inverse: corrected-by
+    scope: unit
+    effect: label
+    effect_on: to
+    effect_value: corrected
+    time_anchor: link
+    exclusion_requires: [publisher, markup, human]
+    transitive: false
+    interop: {cito: "cito:corrects", crossmark: "correction", eli: "eli:corrects"}
+    note: "FR correction_of, ELI corrects, Crossmark correction. Unofficial (email) corrections act on claims, never on documents."
+  supersedes:
+    inverse: superseded-by
+    scope: unit
+    effect: standing
+    effect_on: to
+    effect_value: superseded
+    time_anchor: link
+    exclusion_requires: [publisher, markup, human]
+    transitive: false
+    interop: {dcterms: "dcterms:replaces"}
+    note: "Stored on the newer item. Valid from adoption of the superseding text, not its compliance date."
+  superseded-by:
+    inverse: supersedes
+    scope: unit
+    effect: standing
+    effect_on: from
+    effect_value: superseded
+    time_anchor: link
+    exclusion_requires: [publisher, markup, human]
+    transitive: false
+    interop: {dcterms: "dcterms:isReplacedBy"}
+    note: "v1 type (spectastic). Stored on the older item; the effect lands on that item."
+  do-not-rely:
+    inverse: null
+    scope: document
+    effect: standing
+    effect_on: to
+    effect_value: do_not_rely
+    time_anchor: target
+    exclusion_requires: [publisher]
+    transitive: false
+    interop: {prov: "prov:wasInvalidatedBy (closest)", crossmark: "expression_of_concern (closest)"}
+    note: "8-K Item 4.02. The 8-K names its target by form and period in prose, never by accession, so the link carries an edgar:cik+form+period key."
+  restates:
+    inverse: restated-by
+    scope: unit
+    effect: standing
+    effect_on: to
+    effect_value: restated
+    time_anchor: target
+    exclusion_requires: [publisher]
+    transitive: false
+    interop: {prov: "prov:wasRevisionOf"}
+    note: "10-K/A or 10-Q/A whose amendment restates financial statements; closes the do-not-rely window."
+  repeals:
+    inverse: repealed-by
+    scope: unit
+    effect: standing
+    effect_on: to
+    effect_value: repealed
+    time_anchor: link
+    exclusion_requires: [publisher, markup, human]
+    transitive: false
+    interop: {eli: "eli:repeals"}
+    note: "ELI repeals; valid from the repeal's date of effect."
+  consolidates:
+    inverse: consolidated-by
+    scope: document
+    effect: none
+    effect_on: to
+    effect_value: null
+    time_anchor: null
+    exclusion_requires: []
+    transitive: false
+    interop: {eli: "eli:consolidates"}
+    note: "A consolidated text is a point-in-time copy: ingest it with authenticity=copy."
+  refers-to:
+    inverse: referred-to-by
+    scope: unit
+    effect: none
+    effect_on: to
+    effect_value: null
+    time_anchor: null
+    exclusion_requires: []
+    transitive: false
+    interop: {dcterms: "dcterms:references", cito: "cito:citesAsRelated"}
+    note: "v1 type. NT 10-K -> later 10-K also uses it: anticipation is not supersession."
+  replies-to:
+    inverse: replied-to-by
+    scope: unit
+    effect: none
+    effect_on: to
+    effect_value: null
+    time_anchor: null
+    exclusion_requires: []
+    transitive: false
+    interop: {cito: "cito:repliesTo"}
+    note: "In-Reply-To/References, Slack thread_ts != ts, Teams replyToId. Ordering only, never supersession."
+  resolves:
+    inverse: resolved-by
+    scope: claim
+    effect: label
+    effect_on: to
+    effect_value: null
+    time_anchor: link
+    exclusion_requires: [human]
+    transitive: false
+    interop: {}
+    note: "A later message resolves a hedged claim or query in the target. Effects land on claims and mentions (world, verification, resolution), computed by derive_resolves; provisional until a human confirms. The target document's standing never changes."
+  same-thread-candidate:
+    inverse: same-thread-candidate
+    scope: unit
+    effect: none
+    effect_on: to
+    effect_value: null
+    time_anchor: null
+    exclusion_requires: []
+    transitive: false
+    interop: {}
+    note: "Subject-only thread match (normalised subject, participants, window). A suggestion for the inbox, nothing more."
+  quotes:
+    inverse: quoted-by
+    scope: unit
+    effect: none
+    effect_on: to
+    effect_value: null
+    time_anchor: null
+    exclusion_requires: []
+    transitive: false
+    interop: {cito: "cito:includesQuotationFrom"}
+    note: "Forwards and inline quotes. Never replies-to, never supersedes."
+  duplicates:
+    inverse: duplicates
+    scope: unit
+    effect: none
+    effect_on: to
+    effect_value: null
+    time_anchor: null
+    exclusion_requires: []
+    transitive: false
+    interop: {}
+    note: "Near-duplicate; clusters live in version_dup and are collapsed before top-k."
+  cites:
+    inverse: cited-by
+    scope: unit
+    effect: none
+    effect_on: to
+    effect_value: null
+    time_anchor: null
+    exclusion_requires: []
+    transitive: false
+    interop: {dcterms: "dcterms:references", cito: "cito:cites"}
+    note: "v1 type."
+  validates:
+    inverse: validated-by
+    scope: unit
+    effect: none
+    effect_on: to
+    effect_value: null
+    time_anchor: null
+    exclusion_requires: []
+    transitive: false
+    interop: {}
+    note: "v1 type (spectastic: a test or check validates a requirement)."
+  defers-to:
+    inverse: deferred-to-by
+    scope: unit
+    effect: none
+    effect_on: to
+    effect_value: null
+    time_anchor: null
+    exclusion_requires: []
+    transitive: false
+    interop: {}
+    note: "v1 type (spectastic)."
+  parent:
+    inverse: child
+    scope: unit
+    effect: none
+    effect_on: to
+    effect_value: null
+    time_anchor: null
+    exclusion_requires: []
+    transitive: false
+    interop: {dcterms: "dcterms:isPartOf"}
+    note: "v1 structural type."
+  revises:
+    inverse: revised-by
+    scope: unit
+    effect: none
+    effect_on: to
+    effect_value: null
+    time_anchor: null
+    exclusion_requires: []
+    transitive: false
+    interop: {dcterms: "dcterms:isVersionOf", prov: "prov:wasRevisionOf"}
+    note: "v1 type, kept with no status effect so v1 behaviour is unchanged. New adapters emit amends, corrects or restates."
