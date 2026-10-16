@@ -59,6 +59,19 @@ The golden run writes three files to `build/`, named `episode-3-<model>-<mode>-k
 Every row records the spectastic commit, both model names and a hash of the prompts.
 If any of them change, the numbers are a new baseline, not a comparison.
 
+Before quoting any numbers, check once by hand, on the pinned Ollama, that the run
+measures the pipeline and not a configuration mistake:
+
+1. `ollama show qwen3:8b` lists the thinking capability, and Spring AI sends `think=false`.
+2. Twenty Alpha calls give no reply that isn't JSON once `validateSchema()` has retried.
+3. `ollama ps` shows a context of 16,384 tokens.
+4. Ingest completes with `truncate=false`, and the summary's largest-chunk token count is
+   comfortably inside the embedding model's window.
+5. Every quotation the resolver accepts appears word for word in a retrieved chunk.
+
+Whether Alpha says "Not in the archive." when it should is behaviour, not configuration,
+so the golden run measures it.
+
 The golden set is in `src/main/resources/golden/questions.jsonl`; its format is
 described in [`golden/README.md`](src/main/resources/golden/README.md).
 
