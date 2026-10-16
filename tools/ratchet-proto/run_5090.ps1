@@ -134,7 +134,7 @@ foreach ($c in $candidates) {
     $exe = $c[0]
     $pre = @()
     if ($c.Count -gt 1) { $pre = @($c[1..($c.Count - 1)]) }
-    $r = Invoke-Quiet $exe ($pre + @('-c', 'import sys; print("%d.%d" % sys.version_info[:2])'))
+    $r = Invoke-Quiet $exe ($pre + @('-c', 'import sys; print(''%d.%d'' % sys.version_info[:2])'))
     if ($r.Code -eq 0 -and $r.Text -match '^(\d+)\.(\d+)') {
         $ver = [version]$Matches[0]
         if ($ver -ge [version]'3.11') { $BasePy = @{ Exe = $exe; Pre = $pre; Ver = $Matches[0] }; break }
