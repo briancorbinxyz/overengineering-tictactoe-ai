@@ -385,12 +385,12 @@ def load_or_build(root: Path, cache_dir: Path, variant: str = "ep4") -> Corpus:
     name = f"corpus-{commit[:7]}-{FORMAT}-{variant}-p{PART_WORDS}.json"
     path = Path(cache_dir) / name
     if path.exists():
-        d = json.loads(path.read_text())
+        d = json.loads(path.read_text(encoding="utf-8"))
         c = Corpus(**{k: v for k, v in d.items() if k != "units"})
         c.units = [Item(**u) for u in d["units"]]
         return c
     c = build(root, **VARIANTS[variant])
     path.parent.mkdir(parents=True, exist_ok=True)
     d = asdict(c)
-    path.write_text(json.dumps(d))
+    path.write_text(json.dumps(d), encoding="utf-8")
     return c

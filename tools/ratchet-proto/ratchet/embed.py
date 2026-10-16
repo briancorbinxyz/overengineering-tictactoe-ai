@@ -11,11 +11,17 @@
   The card recommends writing a task sentence per use case; this harness keeps the card's default
   so nothing is tuned on the golden set.
 - ``ollama:<any other model>``: no prefixes.
+- ``llamacpp:<alias>``: llama-server's OpenAI-compatible ``/v1/embeddings`` (``--llamacpp-url``),
+  one of the aliases in ``ratchet/llamacpp.py``, which also holds each model's query/document
+  format and the server flags. Inputs are counted with the server's own tokenizer first and an
+  input that does not fit is an error, never truncated. Qwen3-Embedding inputs end with exactly one
+  ``<|endoftext|>``, the token its last-token pooling reads, whether or not the GGUF adds it.
 - ``wordllama``: WordLlama ``l2_supercat`` 256-d, the static token-embedding model bundled in the
   ``wordllama`` wheel. A PROXY only: a bag of token vectors, not a contextual encoder.
 
 Vectors are cached in ``<cache>/emb/<model>.sqlite``, keyed by the SHA-256 of the model id and
-the exact text sent (prefix included), so a changed prefix or chunk is re-embedded.
+the exact text sent (prefix included), so a changed prefix or chunk is re-embedded. For llama.cpp
+the model id holds the repo:quant, the loaded GGUF's SHA-256 and the pooling.
 """
 
 from __future__ import annotations
@@ -31,7 +37,8 @@ from pathlib import Path
 
 import numpy as np
 
-QWEN3_TASK = "Given a web search query, retrieve relevant passages that answer the query"
+from . import llamacpp as L
+from .llamacpp import QWEN3_TASK
 
 
 class Embedder:
@@ -69,6 +76,7 @@ class Embedder:
                 have[h] = np.frombuffer(b, dtype="<f4", count=d)
         todo = [i for i, k in enumerate(keys) if k not in have]
         if todo:
+            self.check([texts[i] for i in todo], label)
             print(f"  embedding {len(todo)} {label} texts with {self.name} ({len(texts) - len(todo)} cached)", file=sys.stderr)
         for s in range(0, len(todo), batch):
             idx = todo[s : s + batch]
@@ -86,6 +94,9 @@ class Embedder:
         norms = np.linalg.norm(m, axis=1, keepdims=True)
         norms[norms == 0] = 1
         return m / norms
+
+    def check(self, texts: list, label: str):
+        """Called with the texts about to be embedded, before any is sent."""
 
     def embed_docs(self, texts):
         return self.embed([self.doc_text(t) for t in texts], label="document")
@@ -165,9 +176,65 @@ class WordLlamaEmbedder(Embedder):
         return self.wl.embed(texts, norm=True)
 
 
-def make(spec: str, ollama_url: str) -> Embedder:
+class LlamaCppEmbedder(Embedder):
+    """llama-server started with ``--embedding --pooling <p>`` (see ``ratchet/llamacpp.py``)."""
+
+    batch = 64
+
+    def __init__(self, alias: str, url: str, cache_dir: Path | None = None):
+        m = L.model(alias, "embed")
+        self.m = m
+        self.srv = L.Server(url)
+        self.srv.reachable(f"Start it with: llama-server {' '.join(m.server_args(L.port_of(url)))}")
+        self.srv.check_alias(alias)
+        self.model_id, prov = L.gguf_identity(self.srv, m, cache_dir)
+        self.limit = L.input_limit(self.srv, m)
+        self.suffix, eos_how = ("", "")
+        if m.eos:
+            self.suffix, eos_how = L.eos_suffix(self.srv, m.eos)
+        self.name = f"llamacpp:{alias}"
+        self.longest = 0
+        self.provenance = (f"{prov}; queries as {m.query!r}, documents as {m.doc!r}"
+                           + (f"; {eos_how}" if eos_how else "")
+                           + f"; inputs must fit {self.limit} tokens (checked, never truncated)")
+
+    def doc_text(self, t):
+        return self.m.format_doc(t) + self.suffix
+
+    def query_text(self, q):
+        return self.m.format_query(q) + self.suffix
+
+    def check(self, texts, label):
+        n = L.count_tokens(self.srv, texts)
+        self.longest = max([self.longest] + n)
+        over = sorted(((k, t) for k, t in zip(n, texts) if k > self.limit), reverse=True)
+        if over:
+            shown = "; ".join(f"{k} tokens: {t[:60]!r}" for k, t in over[:3])
+            L.too_long_exit(self.m.alias, f"{len(over)} {label} input(s) are longer than {self.limit} tokens "
+                                          f"for {self.m.alias} ({shown})")
+        print(f"  longest {label} input: {max(n)} tokens (limit {self.limit})", file=sys.stderr)
+
+    def _embed(self, texts):
+        try:
+            d = self.srv.post("/v1/embeddings", {"input": texts, "model": self.m.alias, "encoding_format": "float"})
+        except L.ServerError as e:
+            if e.too_long:
+                L.too_long_exit(self.m.alias, f"llama-server refused an input as too long: {e.message}")
+            raise
+        rows = sorted(d["data"], key=lambda r: r["index"])
+        if [r["index"] for r in rows] != list(range(len(texts))):
+            raise SystemExit(f"llama-server returned {len(rows)} embeddings for {len(texts)} inputs")
+        vecs = [r["embedding"] for r in rows]
+        if len({len(v) for v in vecs}) != 1 or not all(any(v) for v in vecs):
+            raise SystemExit("llama-server returned empty or ragged embeddings (is --pooling none, or is this a reranker?)")
+        return vecs
+
+
+def make(spec: str, ollama_url: str, llamacpp_url: str = "http://127.0.0.1:8090", cache_dir=None) -> Embedder:
     if spec == "wordllama":
         return WordLlamaEmbedder()
     if spec.startswith("ollama:"):
         return OllamaEmbedder(spec[len("ollama:"):], ollama_url)
-    raise SystemExit(f"unknown embedder {spec!r}: use ollama:<model> or wordllama")
+    if spec.startswith("llamacpp:"):
+        return LlamaCppEmbedder(spec[len("llamacpp:"):], llamacpp_url, cache_dir)
+    raise SystemExit(f"unknown embedder {spec!r}: use ollama:<model>, llamacpp:<alias> or wordllama")

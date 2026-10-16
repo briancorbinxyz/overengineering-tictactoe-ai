@@ -5,6 +5,8 @@ set, and writes a markdown table and a JSONL of per-question ranks.
     python3 run.py --embedder wordllama --out results/proxy-wordllama
     python3 run.py --embedder ollama:nomic-embed-text:v1.5 \\
         --reranker cross-encoder/ms-marco-MiniLM-L-6-v2 --out results/mac-nomic
+    python3 run.py --embedder llamacpp:qwen3-embedding-8b-q8_0 --reranker llamacpp:bge-reranker-v2-m3-fp16 \\
+        --out results/5090-qwen3-emb-8b        # llama-servers on :8090 and :8091 (run_5090.ps1 starts them)
 
 See README.md for what each configuration is and how to read the verdicts.
 """
@@ -94,7 +96,7 @@ def configs() -> list[Config]:
 def load_golden(path: Path) -> list:
     if "heldout" in path.name and "--score-heldout-at-episode-end" not in sys.argv:
         raise SystemExit("refusing to score a held-out file: held-out questions are scored once, at the end of an episode")
-    return [json.loads(l) for l in path.read_text().splitlines() if l.strip()]
+    return [json.loads(l) for l in path.read_text(encoding="utf-8").splitlines() if l.strip()]
 
 
 def element_texts(root: Path, addresses: set) -> dict:
@@ -126,9 +128,13 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--spectastic", default=str(REPO.parent / "spectastic"), help="spectastic checkout (default ../spectastic)")
     ap.add_argument("--golden", default=str(REPO / "src/main/resources/golden/questions.jsonl"))
-    ap.add_argument("--embedder", default="wordllama", help="wordllama | ollama:<model> | none")
-    ap.add_argument("--reranker", default="none", help="e.g. cross-encoder/ms-marco-MiniLM-L-6-v2")
+    ap.add_argument("--embedder", default="wordllama", help="wordllama | ollama:<model> | llamacpp:<alias> | none")
+    ap.add_argument("--reranker", default="none",
+                    help="e.g. cross-encoder/ms-marco-MiniLM-L-6-v2 or llamacpp:<alias>")
     ap.add_argument("--ollama-url", default="http://localhost:11434")
+    ap.add_argument("--llamacpp-url", default="http://127.0.0.1:8090", help="llama-server for --embedder llamacpp:")
+    ap.add_argument("--llamacpp-rerank-url", default="http://127.0.0.1:8091",
+                    help="llama-server for --reranker llamacpp:")
     ap.add_argument("--cl100k-file", default=None, help="local cl100k_base.tiktoken (offline)")
     ap.add_argument("--cache", default=str(HERE / "cache"))
     ap.add_argument("--ep3-run", default=str(REPO / "results/episode-3/episode-3-qwen3_8b-duo-k4.jsonl"))
@@ -163,9 +169,9 @@ def main():
     # --- embedder, reranker -----------------------------------------------------------------
     emb = None
     if args.embedder != "none":
-        emb = E.make(args.embedder, args.ollama_url)
+        emb = E.make(args.embedder, args.ollama_url, args.llamacpp_url, cache)
         emb.attach_cache(cache)
-    rr, rr_msg = R.make(args.reranker)
+    rr, rr_msg = R.make(args.reranker, args.llamacpp_rerank_url, cache)
     print(rr_msg, file=sys.stderr)
 
     # --- indexes ----------------------------------------------------------------------------
@@ -254,7 +260,7 @@ def main():
         calib["whole_q"], calib["whole_e"], calib["n_e"] = whole_q, whole_e, n_e
         ep3 = Path(args.ep3_run)
         if ep3.exists():
-            rows = [json.loads(l) for l in ep3.read_text().splitlines()[1:] if l.strip()]
+            rows = [json.loads(l) for l in ep3.read_text(encoding="utf-8").splitlines()[1:] if l.strip()]
             gq = {q["id"]: q for q in golden}
             replay, mism = [], 0
             for r in rows:
@@ -275,18 +281,19 @@ def main():
     # --- write -------------------------------------------------------------------------------
     outp = Path(args.out)
     outp.parent.mkdir(parents=True, exist_ok=True)
-    with open(outp.with_suffix(".jsonl"), "w") as f:
+    with open(outp.with_suffix(".jsonl"), "w", encoding="utf-8", newline="\n") as f:
         for key, res in results.items():
             for r in res:
                 f.write(json.dumps({
                     "config": key, "label": labels.get(key, key), "embedder": emb.name if emb else None,
-                    "reranker": rr.name if rr else None, "id": r.qid, "stratum": r.stratum,
+                    "reranker": rr.name if rr else None, "embedder_id": emb.model_id if emb else None,
+                    "reranker_id": getattr(rr, "model_id", rr.name) if rr else None, "id": r.qid, "stratum": r.stratum,
                     "expected": r.expected, "ranks": r.ranks, "partial_ranks": r.partial_ranks,
                     "first_hit": r.first, "stale_ranks": r.stale_ranks, "pinned": r.pinned,
                     "context_tokens_top4": r.context_tokens, "top1_score": r.top1_score, "top10": r.top,
                 }) + "\n")
     md = report(args, cp, corp, chunks, emb, rr_msg, results, labels, kinds, skipped, calib, warn, time.time() - t0)
-    outp.with_suffix(".md").write_text(md)
+    outp.with_suffix(".md").write_text(md, encoding="utf-8", newline="\n")
     print(f"wrote {outp.with_suffix('.md')} and {outp.with_suffix('.jsonl')}", file=sys.stderr)
 
 
@@ -302,6 +309,8 @@ def report(args, cp, corp, chunks, emb, rr_msg, results, labels, kinds, skipped,
       f"{len(corp['legacy'].units):,} prior-prototype units · {nchunks}")
     w("")
     w(f"- Embedder: {emb.provenance if emb else 'none'}")
+    if emb is not None and getattr(emb, "longest", 0):
+        w(f"- Longest embedder input embedded in this run: {emb.longest} tokens (texts already in the vector cache are not re-counted)")
     if emb is not None and getattr(emb, 'truncated', 0):
         w(f"- **{emb.truncated} texts were longer than the embedding model's window and were embedded truncated.**")
     w(f"- Reranker: {rr_msg}")
@@ -392,7 +401,8 @@ def report(args, cp, corp, chunks, emb, rr_msg, results, labels, kinds, skipped,
     if "A_vs_ep3_same_top4" in calib:
         w(f"- Config A's top-4 equals Episode 3's top-4 (same chunks, same order) on "
           f"**{calib['A_vs_ep3_same_top4']}/50** questions. With the same nomic-embed-text digest it should be at or near 50/50 "
-          f"(Ollama's batching can move near-ties); with any other embedder it means nothing.")
+          f"(Ollama's batching can move near-ties; nomic through llama.cpp is another build of the same weights, so "
+          f"expect most, not all); with any other embedder it means nothing.")
     w("")
 
     w("## Unanswerable questions: top-1 score of the last ranking stage (hint only)\n")

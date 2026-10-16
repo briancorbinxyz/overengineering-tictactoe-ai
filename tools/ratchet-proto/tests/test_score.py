@@ -28,7 +28,7 @@ def unit(source, anchor, n=0, lifecycle="current"):
 class ChunkRule(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        tree = H.parse((ROOT / FILE).read_text())
+        tree = H.parse((ROOT / FILE).read_text(encoding="utf-8"))
         cls.page = H.jsoup_text(H.find_tag(tree, "body"))
         texts = {}
         for ident in ("FR-001", "FR-002"):
