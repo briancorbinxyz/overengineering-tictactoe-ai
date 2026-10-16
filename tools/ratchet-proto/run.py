@@ -68,6 +68,11 @@ def configs() -> list[Config]:
         # Episode 5 steps on the BM25 line (exact here: no embedder involved)
         Config("X1", "S3 + supersession redirect (history kept behind)", ids=True, lifecycle=True, redirect="behind", **ep4),
         Config("X2", "S3 + redirect + anchored typed expansion", ids=True, lifecycle=True, redirect="behind", expand=True, **ep4),
+        # hybrid line without the reranker, Episode 5 steps folded in (added after the first Mac run)
+        Config("H1", "S3 + redirect + dense RRF (no reranker)", ids=True, lifecycle=True, dense=True,
+               redirect="behind", needs=("dense",), **ep4),
+        Config("H2", "H1 + anchored typed expansion (no reranker)", ids=True, lifecycle=True, dense=True,
+               redirect="behind", expand=True, needs=("dense",), **ep4),
         # ablations
         Config("A", "naive 800-token chunks, dense only", items="chunks", bm25=False, dense=True, needs=("dense",)),
         Config("B", "naive 800-token chunks, BM25 only", items="chunks"),
